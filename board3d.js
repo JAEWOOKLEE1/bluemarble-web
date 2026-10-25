@@ -723,7 +723,6 @@ const Board3D = (() => {
     else camera.clearViewOffset();
   }
 
-  let userTilted = false; // 사용자가 직접 기울기를 바꿨으면 자동 조정 안 함
   // 가로 화면 카메라 기울기: 거의 위에서 내려다봐서 먼 쪽(위쪽) 도시도 가까운 쪽만큼 잘 보이게
   const LANDSCAPE_EL = 1.33;
   function resize() {
@@ -733,48 +732,24 @@ const Board3D = (() => {
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
     // 가로로 넓은 화면에서는 조금 더 위에서 내려다봐서 판이 화면 높이를 꽉 채우게
-    if (!userTilted) cam.el = camera.aspect > 1.2 ? LANDSCAPE_EL : 0.98;
+    cam.el = camera.aspect > 1.2 ? LANDSCAPE_EL : 0.98;
   }
 
+  // 판은 고정 (돌리기·확대 없음). 입력은 칸 누르기와 쓸어서 주사위 던지기만
   function setupInput() {
-    const pointers = new Map();
-    let down = null, pinch = null;
-    const pinchDist = () => {
-      const [a, b] = [...pointers.values()];
-      return Math.hypot(a.x - b.x, a.y - b.y) || 1;
-    };
+    let down = null;
     canvas.addEventListener('pointerdown', e => {
       Sound.ensure();
+      if (down) { down = null; return; } // 두 손가락은 무시
       canvas.setPointerCapture(e.pointerId);
-      pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
-      if (pointers.size === 1) {
-        down = { x: e.clientX, y: e.clientY, t: performance.now(), lx: e.clientX, ly: e.clientY, moved: false };
-      } else if (pointers.size === 2) {
-        pinch = { d: pinchDist(), zoom: cam.zoom };
-        down = null;
-      }
+      down = { id: e.pointerId, x: e.clientX, y: e.clientY, t: performance.now(), moved: false };
     });
     canvas.addEventListener('pointermove', e => {
-      if (!pointers.has(e.pointerId)) return;
-      pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
-      if (pinch && pointers.size === 2) {
-        cam.zoom = Math.min(1.5, Math.max(0.55, pinch.zoom * pinch.d / pinchDist()));
-        return;
-      }
-      if (!down) return;
+      if (!down || e.pointerId !== down.id) return;
       if (Math.hypot(e.clientX - down.x, e.clientY - down.y) > 8) down.moved = true;
-      if (down.moved && !throwArmed) {
-        userTilted = true;
-        cam.az -= (e.clientX - down.lx) * 0.008;
-        cam.el = Math.min(1.4, Math.max(0.55, cam.el + (e.clientY - down.ly) * 0.005));
-      }
-      down.lx = e.clientX;
-      down.ly = e.clientY;
     });
     const up = e => {
-      pointers.delete(e.pointerId);
-      if (pointers.size < 2) pinch = null;
-      if (!down) return;
+      if (!down || e.pointerId !== down.id) return;
       const dx = e.clientX - down.x, dy = e.clientY - down.y;
       const dist = Math.hypot(dx, dy), ms = Math.max(1, performance.now() - down.t);
       if (!down.moved) {
@@ -791,11 +766,7 @@ const Board3D = (() => {
       down = null;
     };
     canvas.addEventListener('pointerup', up);
-    canvas.addEventListener('pointercancel', e => { pointers.delete(e.pointerId); down = null; pinch = null; });
-    canvas.addEventListener('wheel', e => {
-      e.preventDefault();
-      cam.zoom = Math.min(1.5, Math.max(0.55, cam.zoom * (1 + e.deltaY * 0.001)));
-    }, { passive: false });
+    canvas.addEventListener('pointercancel', () => { down = null; });
   }
 
   function tap(e) {
