@@ -322,6 +322,53 @@ html, body {
 .rotate-hint .web-only { display: none; font-size: 14px; opacity: .8; margin-top: 10px; }
 body.web .rotate-hint .web-only { display: block; }
 
+/* 고민 중 말풍선: 말 머리 위 (board3d.js가 위치를 맞춤) */
+.think-bubble {
+  position: fixed; z-index: 60; pointer-events: none;
+  transform: translate(-50%, calc(-100% - 10px));
+  background: #fff; color: #4a148c; font-weight: 800; font-size: 13px; white-space: nowrap;
+  padding: 5px 10px; border-radius: 14px; border: 2px solid #b39ddb; box-shadow: 0 3px 8px rgba(0,0,0,.25);
+}
+.think-bubble::after {
+  content: ''; position: absolute; left: 50%; bottom: -8px; transform: translateX(-50%);
+  border: 7px solid transparent; border-top-color: #b39ddb; border-bottom: 0;
+}
+.think-bubble .dots i { display: inline-block; font-style: normal; animation: wave 1.2s ease-in-out infinite; }
+.think-bubble .dots i:nth-child(2) { animation-delay: .1s; }
+.think-bubble .dots i:nth-child(3) { animation-delay: .2s; }
+.think-bubble .dots i:nth-child(4) { animation-delay: .3s; }
+.think-bubble .dots i:nth-child(5) { animation-delay: .4s; }
+.think-bubble .dots i:nth-child(6) { animation-delay: .5s; }
+@keyframes wave { 0%, 60%, 100% { transform: translateY(0); } 30% { transform: translateY(-5px); } }
+
+/* 황금열쇠 카드 연출: 금색 열쇠 카드 → 뒤집혀서 내용 */
+.keycard-wrap { position: fixed; inset: 0; z-index: 250; display: flex; align-items: center; justify-content: center; background: rgba(10, 6, 30, .55); perspective: 1200px; animation: kfade .25s ease-out; }
+.keycard-wrap.out { animation: kfade .3s ease-in reverse forwards; }
+@keyframes kfade { from { opacity: 0; } to { opacity: 1; } }
+.keycard { position: relative; width: min(78vw, 470px); aspect-ratio: 1.6; transform-style: preserve-3d; transition: transform .7s cubic-bezier(.3, 1.4, .5, 1); animation: kpop .45s cubic-bezier(.3, 1.6, .5, 1); }
+@keyframes kpop { from { transform: scale(.3) rotate(-8deg); } to { transform: scale(1); } }
+.keycard.flip { transform: rotateY(180deg); }
+.keycard .face { position: absolute; inset: 0; border-radius: 18px; backface-visibility: hidden; overflow: hidden; box-shadow: 0 12px 40px rgba(0,0,0,.5); }
+.keycard .back {
+  background: radial-gradient(circle at 50% 40%, #fff3b0 0, #f6c945 35%, #c8901a 75%, #8a5c0c 100%);
+  border: 6px solid #6b4a10; display: flex; flex-direction: column; align-items: center; justify-content: center;
+}
+.keycard .back::before { content: ''; position: absolute; inset: 10px; border: 3px dashed rgba(107, 74, 16, .55); border-radius: 12px; }
+.keycard .back .kicon { font-size: min(22vw, 120px); line-height: 1; filter: drop-shadow(0 4px 4px rgba(0,0,0,.35)); animation: kshine 1s ease-in-out infinite alternate; }
+@keyframes kshine { to { transform: rotate(-12deg) scale(1.08); } }
+.keycard .back .klabel { margin-top: 6px; font: 900 min(7vw, 34px)/1 sans-serif; letter-spacing: 4px; color: #5a3b06; text-shadow: 0 1px 0 #fff6c8; }
+.keycard .front {
+  transform: rotateY(180deg);
+  background: radial-gradient(ellipse at 20% 110%, #2c4a7a 0, transparent 45%), linear-gradient(160deg, #10183a, #24124a 60%, #0b0f24);
+  border: 6px solid #e8dcc0; color: #fff; padding: 14px 20px; display: flex; flex-direction: column; justify-content: center;
+}
+.keycard .front .kbrand { position: absolute; top: 10px; left: 18px; font: italic 900 12px/1 sans-serif; color: #ffcc80; letter-spacing: 1px; }
+.keycard .front .kno { position: absolute; top: 8px; right: 12px; min-width: 34px; height: 34px; border-radius: 50%; background: #2e7d32; border: 2px solid #c8e6c9; display: flex; align-items: center; justify-content: center; font-weight: 900; font-size: 17px; }
+.keycard .front .ktitle { text-align: center; font: 900 min(8vw, 40px)/1.15 sans-serif; color: #ffe082; text-shadow: 0 2px 0 #000; margin-top: 8px; }
+.keycard .front .kdesc { text-align: center; font-weight: 800; font-size: min(4.4vw, 20px); line-height: 1.35; color: #b3e5fc; margin-top: 10px; }
+.keycard .front .kwho { position: absolute; bottom: 8px; left: 0; right: 0; text-align: center; font-size: 12px; opacity: .8; }
+.keycard .front .kplanet { position: absolute; left: 12px; bottom: 10px; font-size: 26px; }
+
 /* 순서 정하기 카드 */
 .draw-cards { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 10px; }
 .dcard { width: 64px; height: 86px; border-radius: 10px; display: flex; flex-direction: column; align-items: center; justify-content: center; font-weight: 800; font-size: 20px; box-shadow: 0 3px 8px rgba(0,0,0,.25); }

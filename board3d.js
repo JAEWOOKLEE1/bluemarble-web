@@ -917,6 +917,22 @@ const Board3D = (() => {
     if (hit && handlers.onTileTap) handlers.onTileTap(hit.object.userData.idx);
   }
 
+  // ───────── 고민 중 말풍선 ─────────
+  const thinking = new Map(); // 플레이어 id → 말풍선 DOM
+  function setThinking(id, on) {
+    const old = thinking.get(id);
+    if (on && !old) {
+      const el = document.createElement('div');
+      el.className = 'think-bubble';
+      el.innerHTML = '선택중<span class="dots">' + '<i>.</i>'.repeat(6) + '</span>';
+      document.body.appendChild(el);
+      thinking.set(id, el);
+    } else if (!on && old) {
+      old.remove();
+      thinking.delete(id);
+    }
+  }
+
   // ───────── 메인 루프 ─────────
   let lastFrame = 0;
   function loop() {
@@ -934,6 +950,17 @@ const Board3D = (() => {
       const tok = tokens[id];
       if (tok.moving) continue;
       tok.group.position.y = TOP + (tok.current ? Math.abs(Math.sin(time * 3.2)) * 0.12 : 0);
+    }
+    // "선택중……" 말풍선은 말 머리 위를 따라다님
+    if (thinking.size) {
+      const r = canvas.getBoundingClientRect();
+      for (const [id, el] of thinking) {
+        const tok = tokens[id];
+        if (!tok) continue;
+        const p = tok.group.position.clone().setY(tok.group.position.y + 0.55).project(camera);
+        el.style.left = `${r.left + (p.x + 1) / 2 * r.width}px`;
+        el.style.top = `${r.top + (1 - p.y) / 2 * r.height}px`;
+      }
     }
     const glow = choosing ? 0.25 + 0.2 * Math.sin(time * 6) : 0;
     for (const t of tiles) {
@@ -1090,6 +1117,7 @@ const Board3D = (() => {
     playRecording,
     rollDice,
     moneyFlow,
+    setThinking,
     sparkTile,
     // 칸 위에 글자 띄우기 (예: 매각 +15만)
     tileLabel(idx, text, color) { if (tiles[idx]) floatLabel(tiles[idx].center.clone().setY(TOP + 0.3), text, color); },

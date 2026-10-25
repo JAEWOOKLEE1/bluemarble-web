@@ -2,7 +2,7 @@
 'use strict';
 
 // 게임 버전: 고칠 때마다 올림. 온라인 대전은 같은 버전끼리만 입장 가능
-const GAME_VERSION = '5.2';
+const GAME_VERSION = '5.3';
 // 앱이 인터넷에서 최신 파일을 받아 실행 중인지 (아니면 앱에 들어 있는 버전)
 const IS_ONLINE_BUILD = location.protocol.startsWith('http');
 
@@ -202,6 +202,44 @@ const SPEECH = {
   '해외 유학': '황금열쇠예요. 해외 유학비로 20만 원을 내요.',
 };
 const TAX_SPEECH = `사회복지기금에 ${TAX_AMOUNT}만 원을 내요!`;
+const ESCAPE_SPEECH = '탈출~!';
+const ESCAPE_NOW_SPEECH = '이번 턴에 탈출이에요~';
+
+// 사람이 고민하는 동안 그 말 위에 "선택중……" 말풍선 (모든 폰에)
+function thinkFx(p, on) {
+  if (game.speed === 0) return;
+  Board3D.setThinking(p.id, on);
+  if (Net.isHost) Net.broadcast({ t: 'think', pid: p.id, on });
+}
+async function thinking(p, task) {
+  thinkFx(p, true);
+  try { return await task; } finally { thinkFx(p, false); }
+}
+
+// 황금열쇠: 금색 열쇠 카드가 뜨고 → 뒤집혀서 내용이 크게 보임 (모든 폰에)
+function showKeyCard(k) {
+  hideKeyCard(true);
+  const wrap = document.createElement('div');
+  wrap.className = 'keycard-wrap';
+  wrap.id = 'keycard';
+  wrap.innerHTML = `<div class="keycard">
+      <div class="face back"><div class="kicon">🗝️</div><div class="klabel">GOLDEN KEY</div></div>
+      <div class="face front">
+        <div class="kbrand">BLUE MARBLE</div><div class="kno">${k.no}</div>
+        <div class="ktitle">${k.title}</div><div class="kdesc">${k.desc}</div>
+        <div class="kplanet">🌏</div><div class="kwho">${k.who}</div>
+      </div></div>`;
+  document.body.appendChild(wrap);
+  setTimeout(() => { const c = wrap.querySelector('.keycard'); if (c) c.classList.add('flip'); }, 900);
+}
+function hideKeyCard(now) {
+  const el = $('keycard');
+  if (!el) return;
+  if (now) { el.remove(); return; }
+  el.classList.add('out');
+  setTimeout(() => el.remove(), 300);
+}
+
 // 말이 도착할 칸을 미리 반짝여 보여줌
 function sparkFx(idx) {
   if (game.speed === 0) return Promise.resolve();
@@ -451,7 +489,7 @@ function snapshot() {
       id: p.id, name: p.name, label: p.label, color: p.color, animal: p.animal, ctrl: p.ctrl === 'ai' ? 'ai' : 'person',
       profile: p.profile, wasPerson: !!p.wasPerson,
       cash: p.cash, pos: p.pos, laps: p.laps, islandTurns: p.islandTurns, escapeCards: p.escapeCards,
-      freePass: p.freePass, spaceTravel: p.spaceTravel, bankrupt: p.bankrupt,
+      freePass: p.freePass, spaceTravel: p.spaceTravel, bankrupt: p.bankrupt, leaveIsland: !!p.leaveIsland,
     })),
     cells: game.cells.map(c => ({ idx: c.idx, type: c.type, name: c.name, short: c.short, icon: c.icon, ticon: c.ticon, group: c.group, price: c.price, toll: c.toll, owner: c.owner, bld: bldOf(c).slice() })),
     fund: game.fund, round: game.round, maxRounds: game.maxRounds, turn: game.turn,
@@ -647,14 +685,14 @@ async function raiseCash(p, amount) {
   if (isPerson(p)) {
     while (p.cash < amount) {
       const props = propsOf(p);
-      const choice = await askChoice(p, {
+      const choice = await thinking(p, askChoice(p, {
         title: '💸 자금 부족',
         body: `<b>${fmt(amount)}</b>을 내야 하는데 현금이 <b>${fmt(p.cash)}</b>뿐입니다.<br>팔 땅을 고르세요. (투자액의 50%로 매각)`,
         buttons: [
           ...props.map(c => ({ label: propName(c), sub: `팔면 +${fmt(sellValue(c))} 받음`, value: c.idx, cls: 'secondary' })),
           { label: '자동으로 팔기', value: 'auto' },
         ],
-      }, 'auto');
+      }, 'auto'));
       const cell = game.cells[choice];
       if (choice === 'auto' || !cell || cell.owner !== p.id) {
         for (const c of AI.sellOrder(game, p)) { if (p.cash >= amount) break; sellProperty(p, c); }
@@ -767,7 +805,7 @@ async function startBonusBuild(p) {
     sayTo(p, CHOOSE_SPEECH, 'choose');
     // 통행료가 많이 오르는 순으로 최대 10개
     const list = cands.slice().sort((a, b) => tollGain(b.c, b.i, p.id) - tollGain(a.c, a.i, p.id)).slice(0, 10);
-    const key = await askChoice(p, {
+    const key = await thinking(p, askChoice(p, {
       title: '🏁 출발지 보너스 건설!',
       body: `출발 칸에 딱 멈췄어요! 내 도시 한 곳에 건물을 하나 더 지을 수 있어요.<br>내 현금 ${fmt(p.cash)} · ${p.laps + 1}바퀴째라 <b>${allowedText(p)}</b>를 지을 수 있어요`,
       buttons: [
@@ -778,7 +816,7 @@ async function startBonusBuild(p) {
         })),
         { label: '패스', value: '', cls: 'secondary' },
       ],
-    }, '');
+    }, ''));
     pick = cands.find(o => `${o.c.idx}:${o.i}` === key) || null;
   } else {
     await sleep(AI_DELAY);
@@ -948,11 +986,21 @@ async function drawKey(p) {
   const card = game.keyDeck.pop();
   log(`🔑 ${p.name} 황금열쇠 [${card.title}] ${card.desc}`, 'key');
   setMessage(`🔑 ${p.name}: <b>${card.title}</b> — ${card.desc}`);
-  voice(SPEECH[card.title] || `황금열쇠예요! ${card.desc}`, keyVid(card));
-  if (isPerson(p)) {
-    await askChoice(p, { title: `🔑 황금열쇠 · ${card.title}`, body: card.desc, buttons: [{ label: '확인', value: true }] }, true);
-  } else {
-    await sleep(AI_DELAY * 1.5);
+  const speech = SPEECH[card.title] || `황금열쇠예요! ${card.desc}`;
+  if (game.speed !== 0) {
+    // 모두의 화면에 카드를 크게 보여주고, 뒤집힌 뒤 끝까지 읽은 다음에 효과를 반영
+    const k = { no: KEY_CARDS.indexOf(card) + 1, title: card.title, desc: card.desc, who: `${ANIMALS[p.animal].emoji} ${p.name}의 황금열쇠` };
+    showKeyCard(k);
+    if (Net.isHost) Net.broadcast({ t: 'keycard', k });
+    sfx('sparkle');
+    await sleep(1300);
+    voice(speech, keyVid(card));
+    const len = await Sound.speechLength(speech, keyVid(card));
+    // 앞 대사 뒤에 줄 서서 나오면 그만큼 더 기다림
+    await sleep(Math.max(len, Sound.queueLeft()) * 1000 + 500);
+    hideKeyCard();
+    if (Net.isHost) Net.broadcast({ t: 'keyhide' });
+    await sleep(300);
   }
   await card.act(p);
   render();
@@ -980,7 +1028,7 @@ async function takeTurn(p) {
     if (isPerson(p)) {
       if (p.ctrl === 'remote') setMessage(`🚀 <b>${p.name}</b>이(가) 우주여행 갈 곳을 고르는 중…`);
       sayTo(p, CHOOSE_SPEECH, 'choose');
-      target = await askCell(p, '🚀 <b>우주여행!</b> 보드에서 가고 싶은 칸을 누르세요');
+      target = await thinking(p, askCell(p, '🚀 <b>우주여행!</b> 보드에서 가고 싶은 칸을 누르세요'));
     } else {
       await sleep(AI_DELAY);
       target = AI.chooseSpaceTarget(game, p);
@@ -1000,8 +1048,19 @@ async function takeTurn(p) {
     if (use === true) {
       p.escapeCards--;
       p.islandTurns = 0;
+      p.leaveIsland = false;
       log(`🎫 ${j(p.name, '이/가')} 탈출권으로 무인도를 탈출했습니다`, 'good');
+      voice(ESCAPE_SPEECH, 'escape');
       render();
+    }
+  }
+  // 3턴을 다 쉬었으면 굴리기 전에 모두에게 알림
+  if (p.leaveIsland) {
+    p.leaveIsland = false;
+    if (p.pos === 10) {
+      log(`🛶 ${j(p.name, '은/는')} 이번 턴에 무인도를 탈출합니다`, 'good');
+      voice(ESCAPE_NOW_SPEECH, 'escapenow');
+      await sleep(1200);
     }
   }
   if (p.islandTurns > 0) {
@@ -1009,12 +1068,14 @@ async function takeTurn(p) {
     if (a === b) {
       p.islandTurns = 0;
       log(`🛶 ${j(p.name, '이/가')} 더블로 무인도를 탈출했습니다!`, 'good');
+      voice(ESCAPE_SPEECH, 'escape');
       await sparkFx((p.pos + a + b) % 40);
       await moveForward(p, a + b);
       await resolveCell(p);
       return;
     }
     p.islandTurns--;
+    if (p.islandTurns === 0) p.leaveIsland = true;
     log(p.islandTurns > 0
       ? `🏝️ ${p.name}: 무인도에 갇혀 있습니다 (남은 ${p.islandTurns}턴)`
       : `🏝️ ${j(p.name, '은/는')} 다음 턴에 무인도를 떠납니다`);
@@ -1606,6 +1667,9 @@ function onNetMessage(msg) {
     case 'dice': Board3D.playRecording(msg.rec); break;
     case 'sfx': if (Sound[msg.name]) Sound[msg.name](); break;
     case 'say': Sound.say(msg.text, msg.vid); break;
+    case 'think': Board3D.setThinking(msg.pid, msg.on); break;
+    case 'keycard': showKeyCard(msg.k); break;
+    case 'keyhide': hideKeyCard(); break;
     case 'spark': Board3D.sparkTile(msg.idx, 900); break;
     case 'tlabel': Board3D.tileLabel(msg.idx, msg.text, msg.color); break;
     case 'toast': showToast(msg.html, msg.cls); break;

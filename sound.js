@@ -155,6 +155,25 @@ const Sound = {
   clipUrl(vid) {
     return `voice/${vid}.wav?v=${typeof GAME_VERSION === 'string' ? GAME_VERSION : ''}`;
   },
+  // 대사가 끝날 때까지 걸리는 시간(초). 녹음 파일이면 실제 길이(끝 무음 제외), 없으면 글자 수로 어림
+  async speechLength(text, vid) {
+    try {
+      if (vid && this.clips.includes(vid)) {
+        const ctx = this.ensure();
+        let buf = this.clipBuf[vid];
+        if (!buf && ctx) {
+          const data = this.clipData[vid] || await (await fetch(this.clipUrl(vid))).arrayBuffer();
+          buf = this.clipBuf[vid] = await ctx.decodeAudioData(data.slice(0));
+        }
+        if (buf) return Math.max(0.3, buf.duration - 0.35);
+      }
+    } catch (e) { /* 어림값으로 */ }
+    return 0.5 + String(text || '').length * 0.13;
+  },
+  // 지금 줄 서 있는 대사가 다 끝나기까지 남은 시간(초)
+  queueLeft() {
+    return this.ctx ? Math.max(0, (this._clipEnd || 0) - this.ctx.currentTime) : 0;
+  },
   // Web Audio로 정확히 끝까지 재생 (HTML Audio는 폰에서 짧은 파일 끝을 자르기도 함)
   async playClip(vid) {
     const ctx = this.ensure();
