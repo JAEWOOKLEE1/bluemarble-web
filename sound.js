@@ -131,17 +131,27 @@ const Sound = {
   },
 
   // 음성 안내: 앱에서는 안드로이드 음성(높고 밝은 톤), 브라우저에서는 웹 음성으로 읽어줌
+  // 목소리 높이·속도 (너무 높이면 소리가 갈라져 쉰 목소리가 됨 → 살짝만 높게)
+  VOICE_PITCH: 1.25,
+  VOICE_RATE: 1.05,
   say(text) {
     if (this.muted || !text) return;
     const t = String(text).replace(/<[^>]*>/g, '').replace(/(\d+)만/g, '$1만 원');
     try {
-      if (window.AndroidTTS) { window.AndroidTTS.speak(t); return; }
+      if (window.AndroidTTS) {
+        if (!this._voiceSet && window.AndroidTTS.config) {
+          window.AndroidTTS.config(this.VOICE_PITCH, this.VOICE_RATE);
+          this._voiceSet = true;
+        }
+        window.AndroidTTS.speak(t);
+        return;
+      }
     } catch (e) { /* 앱 음성 없음 */ }
     if (window.speechSynthesis && window.SpeechSynthesisUtterance) {
       const u = new SpeechSynthesisUtterance(t);
       u.lang = 'ko-KR';
-      u.pitch = 1.6;
-      u.rate = 1.05;
+      u.pitch = this.VOICE_PITCH;
+      u.rate = this.VOICE_RATE;
       speechSynthesis.cancel();
       speechSynthesis.speak(u);
     }
