@@ -2,7 +2,7 @@
 'use strict';
 
 // 게임 버전: 고칠 때마다 올림. 온라인 대전은 같은 버전끼리만 입장 가능
-const GAME_VERSION = '4.0';
+const GAME_VERSION = '4.1';
 // 앱이 인터넷에서 최신 파일을 받아 실행 중인지 (아니면 앱에 들어 있는 버전)
 const IS_ONLINE_BUILD = location.protocol.startsWith('http');
 
@@ -35,49 +35,49 @@ const GROUPS = [
   { name: '초록', color: '#81c784' },
   { name: '남색', color: '#5c6bc0' },
 ];
-const GROUP_BASE = [6, 9, 12, 15, 19, 23, 27, 32];
-
+// 실제 부루마블(씨앗사) 판과 같은 지역·순서·땅값 (단위: 만)
+// 색 그룹은 판 위에서 이웃한 도시끼리 묶음. 관광지(제주도·콩코드·부산·퀸엘리자베스·컬럼비아·서울)는 건물을 못 지음
 const BOARD_DEF = [
   { type: 'start', name: '출발', icon: '🏁' },
-  { type: 'city', name: '타이베이', g: 0 },
+  { type: 'city', name: '타이베이', g: 0, price: 5 },
   { type: 'key', name: '황금열쇠', icon: '🔑' },
-  { type: 'city', name: '베이징', g: 0 },
-  { type: 'city', name: '마닐라', g: 0 },
-  { type: 'tour', name: '제주도', price: 20 },
-  { type: 'city', name: '싱가포르', g: 1 },
-  { type: 'city', name: '카이로', g: 1 },
-  { type: 'city', name: '이스탄불', g: 1 },
-  { type: 'city', name: '두바이', g: 1 },
+  { type: 'city', name: '베이징', g: 0, price: 8 },
+  { type: 'city', name: '마닐라', g: 0, price: 8 },
+  { type: 'tour', name: '제주도', price: 20, ticon: '🏝️' },
+  { type: 'city', name: '싱가포르', g: 1, price: 10 },
+  { type: 'key', name: '황금열쇠', icon: '🔑' },
+  { type: 'city', name: '카이로', g: 1, price: 10 },
+  { type: 'city', name: '이스탄불', g: 1, price: 12 },
   { type: 'island', name: '무인도', icon: '🏝️' },
-  { type: 'city', name: '아테네', g: 2 },
+  { type: 'city', name: '아테네', g: 2, price: 14 },
   { type: 'key', name: '황금열쇠', icon: '🔑' },
-  { type: 'city', name: '코펜하겐', g: 2 },
-  { type: 'city', name: '스톡홀름', g: 2 },
-  { type: 'tour', name: '콩코드 여객기', short: '콩코드', price: 25 },
-  { type: 'city', name: '베른', g: 3 },
-  { type: 'city', name: '베를린', g: 3 },
-  { type: 'city', name: '오타와', g: 3 },
-  { type: 'city', name: '빈', g: 3 },
+  { type: 'city', name: '코펜하겐', g: 2, price: 16 },
+  { type: 'city', name: '스톡홀름', g: 2, price: 16 },
+  { type: 'tour', name: '콩코드 여객기', short: '콩코드', price: 20, ticon: '✈️' },
+  { type: 'city', name: '베른', g: 3, price: 18 },
+  { type: 'key', name: '황금열쇠', icon: '🔑' },
+  { type: 'city', name: '베를린', g: 3, price: 18 },
+  { type: 'city', name: '오타와', g: 3, price: 20 },
   { type: 'fund', name: '사회복지기금', short: '복지기금', icon: '💝' },
-  { type: 'city', name: '부에노스아이레스', short: '부에노스', g: 4 },
+  { type: 'city', name: '부에노스아이레스', short: '부에노스', g: 4, price: 22 },
   { type: 'key', name: '황금열쇠', icon: '🔑' },
-  { type: 'city', name: '상파울루', g: 4 },
-  { type: 'city', name: '시드니', g: 4 },
-  { type: 'city', name: '리우데자네이루', short: '리우', g: 4 },
-  { type: 'tour', name: '퀸엘리자베스호', short: '퀸즈호', price: 30 },
-  { type: 'city', name: '리스본', g: 5 },
-  { type: 'city', name: '마드리드', g: 5 },
-  { type: 'city', name: '로마', g: 5 },
+  { type: 'city', name: '상파울루', g: 4, price: 24 },
+  { type: 'city', name: '시드니', g: 4, price: 24 },
+  { type: 'tour', name: '부산', price: 50, ticon: '⚓' },
+  { type: 'city', name: '하와이', g: 5, price: 26 },
+  { type: 'city', name: '리스본', g: 5, price: 26 },
+  { type: 'tour', name: '퀸엘리자베스호', short: '퀸엘리자베스', price: 30, ticon: '🚢' },
+  { type: 'city', name: '마드리드', g: 5, price: 28 },
   { type: 'space', name: '우주여행', icon: '🚀' },
-  { type: 'city', name: '홍콩', g: 6 },
+  { type: 'city', name: '도쿄', g: 6, price: 30 },
+  { type: 'tour', name: '컬럼비아호', price: 45, ticon: '🛰️' },
+  { type: 'city', name: '파리', g: 6, price: 32 },
+  { type: 'city', name: '로마', g: 6, price: 32 },
   { type: 'key', name: '황금열쇠', icon: '🔑' },
-  { type: 'city', name: '도쿄', g: 6 },
-  { type: 'city', name: '파리', g: 6 },
-  { type: 'city', name: '런던', g: 6 },
-  { type: 'tax', name: '사회복지기금 납부', short: '기금납부', icon: '💸' },
-  { type: 'city', name: '뉴욕', g: 7 },
-  { type: 'city', name: '샌프란시스코', short: '샌프란', g: 7 },
-  { type: 'city', name: '서울', g: 7 },
+  { type: 'city', name: '런던', g: 7, price: 35 },
+  { type: 'city', name: '뉴욕', g: 7, price: 35 },
+  { type: 'tax', name: '사회복지기금 접수처', short: '기금납부', icon: '💸' },
+  { type: 'tour', name: '서울', price: 100, ticon: '🏯' },
 ];
 
 // ───────── 황금열쇠 카드 ─────────
@@ -364,7 +364,7 @@ function snapshot() {
       cash: p.cash, pos: p.pos, laps: p.laps, islandTurns: p.islandTurns, escapeCards: p.escapeCards,
       freePass: p.freePass, spaceTravel: p.spaceTravel, bankrupt: p.bankrupt,
     })),
-    cells: game.cells.map(c => ({ idx: c.idx, type: c.type, name: c.name, short: c.short, icon: c.icon, group: c.group, price: c.price, owner: c.owner, level: c.level })),
+    cells: game.cells.map(c => ({ idx: c.idx, type: c.type, name: c.name, short: c.short, icon: c.icon, ticon: c.ticon, group: c.group, price: c.price, owner: c.owner, level: c.level })),
     fund: game.fund, round: game.round, maxRounds: game.maxRounds, turn: game.turn,
     currentId: game.current ? game.current.id : null,
     hostId: myPlayer() ? myPlayer().id : null,
@@ -804,10 +804,20 @@ async function landProperty(p, c) {
   } else {
     const owner = game.players[c.owner];
     const toll = tollOf(c);
+    // 통행료 면제권은 원할 때만 사용 (아껴 뒀다가 비싼 곳에서 쓸 수 있음)
     if (p.freePass > 0) {
-      p.freePass--;
-      log(`🎟️ ${j(p.name, '이/가')} 통행료 면제권을 사용했습니다 (${c.name})`, 'good');
-      return;
+      const use = isPerson(p)
+        ? await askChoice(p, yesNo('🎟️ 통행료 면제권',
+            `${owner.name}의 <b>${c.name}</b> 통행료 <b>${fmt(toll)}</b>을 내야 해요.<br>면제권을 쓸까요? (보유 ${p.freePass}장)`,
+            '면제권 쓰기', '그냥 내기'), false)
+        : AI.wantUseFreePass(game, p, toll);
+      if (use === true) {
+        p.freePass--;
+        log(`🎟️ ${j(p.name, '이/가')} 통행료 면제권으로 ${c.name} 통행료 ${fmt(toll)}을 면제받았습니다`, 'good');
+        toast(`🎟️ <b>${p.name}</b> 면제권 사용 · ${c.name} 통행료 ${fmt(toll)} 면제`, 'sell');
+        render();
+        return;
+      }
     }
     log(`💰 ${j(p.name, '이/가')} ${owner.name}에게 ${c.name} 통행료 ${fmt(toll)}을 냅니다`, 'bad');
     if (!isPerson(p)) await sleep(AI_DELAY / 2);
@@ -904,7 +914,8 @@ async function takeTurn(p) {
 
 // ───────── 자동 저장 (혼자 하기) ─────────
 // 폰을 접거나 앱이 강제로 닫혀도 다시 켜면 마지막 턴 시작부터 이어할 수 있게 매 턴 저장
-const SAVE_KEY = 'bm-save-v1';
+// v2: 실제 부루마블 판으로 바뀌어서 예전 판의 저장은 쓰지 않음
+const SAVE_KEY = 'bm-save-v2';
 function saveGame() {
   if (Net.mode !== 'solo' || game.speed === 0 || game.over) return;
   try {
@@ -1011,16 +1022,10 @@ function showEnd({ reason, rows, winnerId }) {
 }
 
 function initCells() {
-  const count = {};
   game.cells = BOARD_DEF.map((d, i) => {
-    const c = { idx: i, type: d.type, name: d.name, short: d.short || d.name, icon: d.icon, owner: null, level: 0 };
-    if (d.type === 'city') {
-      const k = count[d.g] || 0;
-      count[d.g] = k + 1;
-      c.group = d.g;
-      c.price = GROUP_BASE[d.g] + k;
-    }
-    if (d.type === 'tour') c.price = d.price;
+    const c = { idx: i, type: d.type, name: d.name, short: d.short || d.name, icon: d.icon, ticon: d.ticon, owner: null, level: 0 };
+    if (d.type === 'city') c.group = d.g;
+    if (d.type === 'city' || d.type === 'tour') c.price = d.price;
     return c;
   });
 }

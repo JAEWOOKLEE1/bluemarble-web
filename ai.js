@@ -52,6 +52,11 @@ const AI = {
     return p.cash - cost >= reserve;
   },
 
+  // 통행료 면제권: 비싼 통행료일 때만 씀 (싼 곳은 그냥 내고 아껴 둠)
+  wantUseFreePass(game, p, toll) {
+    return toll >= 20 || toll > p.cash * 0.25;
+  },
+
   // 무인도 탈출권 사용 여부: 신중형은 보드가 위험하면 무인도에 머무름
   wantUseEscape(game, p) {
     const danger = game.cells

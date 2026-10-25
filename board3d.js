@@ -251,7 +251,7 @@ const Board3D = (() => {
       fit(cell.short, 42, 'bold', box.w - 24);
       ctx.fillText(cell.short, cx, cy + 62);
     } else {
-      if (cell.type === 'tour') { ctx.font = `46px ${FONT}`; ctx.fillText('✈️', cx, cy - 52); }
+      if (cell.type === 'tour') { ctx.font = `46px ${FONT}`; ctx.fillText(cell.ticon || '✈️', cx, cy - 52); }
       fit(cell.short, 50, 'bold', box.w - 26);
       ctx.fillText(cell.short, cx, cy - (cell.type === 'tour' ? 0 : 20));
       const sub = owner ? `통행료 ${tollOf(cell)}만` : `${cell.price}만`;
@@ -268,23 +268,39 @@ const Board3D = (() => {
     c.height = 1024;
     const ctx = c.getContext('2d');
     const mx = c.width / 2;
+    // 밝은 하늘색 바다 + 흰 물결 고리
     const g = ctx.createRadialGradient(mx, 450, 60, mx, 512, 720 * SX);
-    g.addColorStop(0, '#2a5ca8');
-    g.addColorStop(1, '#0d2244');
+    g.addColorStop(0, '#9ee3ff');
+    g.addColorStop(0.6, '#5bb8f5');
+    g.addColorStop(1, '#3a8ee0');
     ctx.fillStyle = g;
     ctx.fillRect(0, 0, c.width, 1024);
-    ctx.strokeStyle = 'rgba(255,255,255,.07)';
-    ctx.lineWidth = 3;
+    ctx.strokeStyle = 'rgba(255,255,255,.18)';
+    ctx.lineWidth = 4;
     for (let r = 120; r < 700 * SX; r += 90) { ctx.beginPath(); ctx.arc(mx, 512, r, 0, Math.PI * 2); ctx.stroke(); }
+    // 몽글몽글 구름
+    ctx.fillStyle = 'rgba(255,255,255,.55)';
+    for (const [x, y, s] of [[0.18, 0.75, 1], [0.8, 0.78, 0.8], [0.78, 0.15, 0.7], [0.2, 0.12, 0.6]]) {
+      const cx = x * c.width, cy = y * 1024;
+      for (const [dx, dy, r] of [[-40, 0, 40], [0, -18, 52], [44, 0, 38], [0, 14, 42]]) {
+        ctx.beginPath();
+        ctx.arc(cx + dx * s, cy + dy * s, r * s, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    const tg = ctx.createLinearGradient(mx - 312, 0, mx + 312, 0);
-    tg.addColorStop(0, '#ffd54f');
-    tg.addColorStop(1, '#ff8a65');
-    ctx.fillStyle = tg;
     ctx.font = `900 118px ${FONT}`;
+    ctx.lineWidth = 16;
+    ctx.strokeStyle = '#ffffff';
+    ctx.strokeText('BLUE MARBLE', mx, 300);
+    const tg = ctx.createLinearGradient(mx - 312, 0, mx + 312, 0);
+    tg.addColorStop(0, '#ff9a3c');
+    tg.addColorStop(0.5, '#ff5fa2');
+    tg.addColorStop(1, '#8a6bff');
+    ctx.fillStyle = tg;
     ctx.fillText('BLUE MARBLE', mx, 300);
-    ctx.fillStyle = 'rgba(255,255,255,.55)';
+    ctx.fillStyle = 'rgba(255,255,255,.95)';
     ctx.font = `bold 58px ${FONT}`;
     ctx.fillText('부 루 마 블', mx, 400);
     const tex = new THREE.CanvasTexture(c);
@@ -293,30 +309,106 @@ const Board3D = (() => {
   }
 
   // ───────── 주사위 ─────────
-  const PIP_POS = {
-    1: [[0.5, 0.5]], 2: [[0.27, 0.27], [0.73, 0.73]], 3: [[0.25, 0.25], [0.5, 0.5], [0.75, 0.75]],
-    4: [[0.27, 0.27], [0.73, 0.27], [0.27, 0.73], [0.73, 0.73]],
-    5: [[0.25, 0.25], [0.75, 0.25], [0.5, 0.5], [0.25, 0.75], [0.75, 0.75]],
-    6: [[0.27, 0.22], [0.73, 0.22], [0.27, 0.5], [0.73, 0.5], [0.27, 0.78], [0.73, 0.78]],
-  };
+  // 주사위 면: 금색 금속 테두리 + 덩굴무늬 장식, 반짝이가 든 자주·보라 면, 금색 숫자
   function dieTexture(n) {
+    const S = 256;
     const c = document.createElement('canvas');
-    c.width = c.height = 128;
+    c.width = c.height = S;
     const ctx = c.getContext('2d');
-    const g = ctx.createRadialGradient(64, 64, 20, 64, 64, 95);
-    g.addColorStop(0, '#ffffff');
-    g.addColorStop(0.8, '#f3f3f3');
-    g.addColorStop(1, '#cfd3da');
-    ctx.fillStyle = g;
-    ctx.fillRect(0, 0, 128, 128);
-    for (const [x, y] of PIP_POS[n]) {
+    const gold = (x0, y0, x1, y1) => {
+      const g = ctx.createLinearGradient(x0, y0, x1, y1);
+      g.addColorStop(0, '#7a5a1c');
+      g.addColorStop(0.3, '#f6d77a');
+      g.addColorStop(0.55, '#c99a3a');
+      g.addColorStop(0.8, '#ffe9a6');
+      g.addColorStop(1, '#8a6420');
+      return g;
+    };
+
+    // 보라·자주 레진 면
+    const bg = ctx.createRadialGradient(S * 0.45, S * 0.4, 10, S / 2, S / 2, S * 0.75);
+    bg.addColorStop(0, '#e0329a');
+    bg.addColorStop(0.45, '#9c1a8c');
+    bg.addColorStop(1, '#3b0a55');
+    ctx.fillStyle = bg;
+    ctx.fillRect(0, 0, S, S);
+    // 반짝이 (작은 별가루)
+    for (let i = 0; i < 70; i++) {
+      const x = 20 + Math.random() * (S - 40), y = 20 + Math.random() * (S - 40);
+      const r = Math.random() * 1.6 + 0.4;
+      ctx.fillStyle = `rgba(255,${200 + Math.random() * 55 | 0},255,${0.4 + Math.random() * 0.6})`;
       ctx.beginPath();
-      ctx.arc(x * 128, y * 128, n === 1 ? 17 : 11.5, 0, Math.PI * 2);
-      ctx.fillStyle = n === 1 ? '#d32f2f' : '#1d2433';
+      ctx.arc(x, y, r, 0, Math.PI * 2);
       ctx.fill();
     }
+
+    // 금색 테두리
+    const B = 22;
+    ctx.fillStyle = gold(0, 0, S, S);
+    ctx.fillRect(0, 0, S, B);
+    ctx.fillRect(0, S - B, S, B);
+    ctx.fillRect(0, 0, B, S);
+    ctx.fillRect(S - B, 0, B, S);
+    // 테두리 안쪽 물결(덩굴) 장식: 네 변을 따라 반원 고리
+    ctx.strokeStyle = gold(0, S, S, 0);
+    ctx.lineWidth = 7;
+    const scallop = (x0, y0, dx, dy, nx, ny) => {
+      const count = 5, step = (S - 2 * B) / count;
+      for (let k = 0; k < count; k++) {
+        const cx = x0 + dx * (step * (k + 0.5)), cy = y0 + dy * (step * (k + 0.5));
+        const start = Math.atan2(ny, nx) - Math.PI / 2;
+        ctx.beginPath();
+        ctx.arc(cx, cy, step * 0.42, start, start + Math.PI);
+        ctx.stroke();
+      }
+    };
+    scallop(B, B, 1, 0, 0, 1);         // 위
+    scallop(B, S - B, 1, 0, 0, -1);    // 아래
+    scallop(B, B, 0, 1, 1, 0);         // 왼쪽
+    scallop(S - B, B, 0, 1, -1, 0);    // 오른쪽
+    // 모서리 소용돌이
+    ctx.lineWidth = 6;
+    for (const [x, y] of [[B + 14, B + 14], [S - B - 14, B + 14], [B + 14, S - B - 14], [S - B - 14, S - B - 14]]) {
+      ctx.beginPath();
+      ctx.arc(x, y, 12, 0, Math.PI * 1.6);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(x, y, 4, 0, Math.PI * 2);
+      ctx.fillStyle = '#f6d77a';
+      ctx.fill();
+    }
+    // 바깥 가장자리 어둡게 → 금속 모서리 느낌
+    ctx.strokeStyle = 'rgba(60,35,5,.8)';
+    ctx.lineWidth = 4;
+    ctx.strokeRect(2, 2, S - 4, S - 4);
+
+    // 금색 숫자 (6과 9는 밑줄로 구분)
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font = `bold 120px Georgia, 'Times New Roman', serif`;
+    ctx.lineWidth = 8;
+    ctx.strokeStyle = 'rgba(50,20,0,.85)';
+    ctx.strokeText(String(n), S / 2, S / 2 + 6);
+    ctx.fillStyle = gold(S * 0.3, S * 0.25, S * 0.7, S * 0.75);
+    ctx.fillText(String(n), S / 2, S / 2 + 6);
+    if (n === 6) {
+      ctx.fillRect(S / 2 - 22, S / 2 + 62, 44, 7);
+    }
+    // 숫자 위 하이라이트
+    ctx.globalAlpha = 0.35;
+    ctx.fillStyle = '#fff6d0';
+    ctx.font = `bold 120px Georgia, 'Times New Roman', serif`;
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(0, 0, S, S / 2 - 10);
+    ctx.clip();
+    ctx.fillText(String(n), S / 2 - 2, S / 2 + 4);
+    ctx.restore();
+    ctx.globalAlpha = 1;
+
     const tex = new THREE.CanvasTexture(c);
     tex.encoding = THREE.sRGBEncoding;
+    tex.anisotropy = 4;
     return tex;
   }
   // BoxGeometry 면 순서: +x, -x, +y, -y, +z, -z (마주보는 면 합 = 7)
@@ -364,7 +456,11 @@ const Board3D = (() => {
       world.addBody(w);
     }
 
-    const mats = FACE_VALUES.map(v => new THREE.MeshStandardMaterial({ map: dieTexture(v), roughness: 0.35 }));
+    // 살짝 스스로 빛나게 해서 그늘에서도 보라색과 금색이 선명하게
+    const mats = FACE_VALUES.map(v => {
+      const map = dieTexture(v);
+      return new THREE.MeshStandardMaterial({ map, roughness: 0.3, metalness: 0.15, emissive: '#ffffff', emissiveMap: map, emissiveIntensity: 0.18 });
+    });
     for (let k = 0; k < 2; k++) {
       const mesh = shadow(new THREE.Mesh(new THREE.BoxGeometry(DIE, DIE, DIE), mats));
       const h = DIE / 2;
@@ -808,13 +904,14 @@ const Board3D = (() => {
       handlers = h;
       // 가로로 긴 화면이면 판을 아주 살짝만 가로로 늘림 (가로:세로 ≈ 1.25:1)
       SX = canvas.clientWidth / Math.max(1, canvas.clientHeight) > 1.3 ? 1.25 : 1;
-      renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+      // 배경은 투명 → 뒤에 깔린 CSS 파스텔 그라데이션이 보임
+      renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+      renderer.setClearColor(0x000000, 0);
       renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
       renderer.outputEncoding = THREE.sRGBEncoding;
       renderer.shadowMap.enabled = true;
       renderer.shadowMap.type = THREE.PCFSoftShadowMap;
       scene = new THREE.Scene();
-      scene.background = new THREE.Color('#0d1a30');
       camera = new THREE.PerspectiveCamera(36, 1, 0.1, 100);
       clock = new THREE.Clock();
       raycaster = new THREE.Raycaster();
@@ -828,7 +925,7 @@ const Board3D = (() => {
       sun.shadow.bias = -0.0005;
       scene.add(sun);
 
-      const base = new THREE.Mesh(new THREE.BoxGeometry(11 * SX + 0.6, 0.4, 11.6), new THREE.MeshStandardMaterial({ color: '#1b2c4a', roughness: 0.6 }));
+      const base = new THREE.Mesh(new THREE.BoxGeometry(11 * SX + 0.6, 0.4, 11.6), new THREE.MeshStandardMaterial({ color: '#ffc75a', roughness: 0.55 }));
       base.position.y = -0.2;
       base.receiveShadow = true;
       scene.add(base);

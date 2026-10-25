@@ -1,8 +1,10 @@
 * { box-sizing: border-box; }
 
 :root {
-  --bg: #10203a;
-  --panel: #182c4c;
+  --bg: #3a2f7a;
+  /* 밝은 배경 위에 올리는 보랏빛 반투명 카드 */
+  --panel: rgba(58, 42, 120, .78);
+  --sky: linear-gradient(135deg, #8fd3fe 0%, #b9b4ff 50%, #ffc2e2 100%);
   --text: #eef3ff;
   --muted: #9fb3d6;
   --accent: #ffd54f;
@@ -10,7 +12,8 @@
 
 html, body {
   margin: 0;
-  background: var(--bg);
+  min-height: 100%;
+  background: var(--sky) fixed;
   color: var(--text);
   font-family: -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', 'Malgun Gothic', 'Noto Sans KR', sans-serif;
   -webkit-tap-highlight-color: transparent;
@@ -57,7 +60,7 @@ html, body {
   pointer-events: none;
 }
 .chip-info {
-  background: rgba(10, 20, 38, .7);
+  background: rgba(48, 34, 104,.7);
   border-radius: 999px;
   padding: 4px 10px;
   font-size: 13px;
@@ -67,7 +70,7 @@ html, body {
 .icon-btn {
   margin-left: auto;
   pointer-events: auto;
-  background: rgba(10, 20, 38, .7);
+  background: rgba(48, 34, 104,.7);
   border: none;
   border-radius: 50%;
   width: 34px; height: 34px;
@@ -86,7 +89,7 @@ html, body {
 }
 .toast {
   max-width: 100%;
-  background: rgba(10, 20, 38, .9);
+  background: rgba(48, 34, 104,.9);
   border-left: 4px solid var(--accent);
   border-radius: 10px;
   padding: 8px 12px;
@@ -153,7 +156,7 @@ html, body {
   font-size: 11px;
   padding: 2px 6px;
   border-radius: 5px;
-  background: #0f1f38;
+  background: rgba(30, 20, 70, .55);
   border-left: 4px solid var(--g);
 }
 .none { font-size: 11px; color: var(--muted); }
@@ -161,7 +164,7 @@ html, body {
 .log-box { background: var(--panel); border-radius: 10px; padding: 10px 12px; }
 .log-title { font-weight: 700; margin-bottom: 6px; }
 #log { height: 260px; overflow-y: auto; font-size: 13px; }
-.log-entry { padding: 4px 0; border-bottom: 1px solid #22385d; }
+.log-entry { padding: 4px 0; border-bottom: 1px solid rgba(255, 255, 255, .12); }
 .log-entry.good { color: #a5d6a7; }
 .log-entry.bad { color: #ef9a9a; }
 .log-entry.key { color: #ffe082; }
@@ -339,7 +342,7 @@ html, body {
   .toast { font-size: 10px; padding: 4px 6px; border-left-width: 3px; }
 
   /* 아래: 칸 정보, 메시지 + 던지기 */
-  .cell-info { font-size: 10px; line-height: 1.3; padding: 0 2px; min-height: 0; max-height: 4em; overflow: hidden; }
+  .cell-info { font-size: 10px; line-height: 1.3; padding: 4px 6px; min-height: 0; max-height: 4.6em; overflow: hidden; background: var(--panel); border-radius: 8px; color: #e6e0ff; }
   .hud { flex-direction: column; align-items: stretch; gap: 4px; padding: 6px; }
   .message { font-size: 11px; line-height: 1.3; min-height: 0; max-height: 5.2em; overflow: hidden; }
   #roll-btn { width: 100%; padding: 8px 6px; font-size: 14px; }
@@ -355,9 +358,9 @@ html, body {
     overflow-y: auto;
     padding: 6px;
     gap: 6px;
-    background: rgba(13, 26, 48, .96);
-    border-left: 1px solid #24406b;
-    border-right: 1px solid #24406b;
+    background: rgba(48, 34, 104, .95);
+    border-left: 1px solid rgba(255, 255, 255, .25);
+    border-right: 1px solid rgba(255, 255, 255, .25);
     transform: translateX(calc(100% + var(--rcol)));
     transition: transform .25s ease-out;
   }
