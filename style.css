@@ -319,7 +319,12 @@ html, body {
 
 /* 휴대폰을 세로로 들면 가로로 돌리라는 안내 (앱은 가로로 고정됨) */
 .icon-btn.hidden { display: none; }
-.rotate-hint .web-only { display: none; font-size: 14px; opacity: .8; margin-top: 10px; }
+.rotate-hint .web-only { display: none; }
+.rotate-hint .rotate-go {
+  margin-top: 18px; padding: 14px 22px; border: 0; border-radius: 999px; font-size: 17px; font-weight: 800;
+  color: #fff; background: linear-gradient(135deg, #7e57c2, #ec407a); box-shadow: 0 6px 16px rgba(126, 87, 194, .45);
+  animation: glow 1.6s ease-in-out infinite;
+}
 body.web .rotate-hint .web-only { display: block; }
 
 /* 고민 중 말풍선: 말 머리 위 (board3d.js가 위치를 맞춤) */
