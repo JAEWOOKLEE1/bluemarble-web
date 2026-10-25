@@ -134,20 +134,46 @@ const Sound = {
   // 목소리 높이·속도 (너무 높이면 소리가 갈라져 쉰 목소리가 됨). 1.25배가 가장 좋다는 의견
   VOICE_PITCH: 1.25,
   VOICE_RATE: 1.05,
-  // 녹음된 대사 파일 목록 (voice/list.json). 여기 있는 대사는 사람 목소리 파일로 틈
+  // 녹음된 대사 파일 목록 (voice/list.json). 여기 있는 대사는 사람 목소리 파일(voice/이름.wav)로 틈
+  // 파일 끝에 여운과 무음을 붙여 둠 — 폰에서 끝이 뚝 잘리지 않게
   clips: [],
+  clipData: {},     // 이름 → 받아 둔 파일(ArrayBuffer)
+  clipBuf: {},      // 이름 → 디코딩한 소리 (Web Audio)
   loadClips() {
     fetch('voice/list.json', { cache: 'no-store' })
       .then(r => (r.ok ? r.json() : []))
-      .then(list => { this.clips = Array.isArray(list) ? list : []; })
+      .then(list => {
+        this.clips = Array.isArray(list) ? list : [];
+        for (const v of this.clips) {
+          fetch(`voice/${v}.wav`).then(r => (r.ok ? r.arrayBuffer() : null))
+            .then(b => { if (b) this.clipData[v] = b; }).catch(() => {});
+        }
+      })
       .catch(() => {});
+  },
+  // Web Audio로 정확히 끝까지 재생 (HTML Audio는 폰에서 짧은 파일 끝을 자르기도 함)
+  async playClip(vid) {
+    const ctx = this.ensure();
+    if (!ctx) throw new Error('no audio');
+    let buf = this.clipBuf[vid];
+    if (!buf) {
+      const data = this.clipData[vid] || await (await fetch(`voice/${vid}.wav`)).arrayBuffer();
+      buf = this.clipBuf[vid] = await ctx.decodeAudioData(data.slice(0));
+    }
+    if (this._clip) { try { this._clip.stop(); } catch (e) { /* 이미 끝남 */ } }
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    src.connect(ctx.destination);
+    src.start();
+    this._clip = src;
   },
   say(text, vid) {
     if (this.muted || !text) return;
     if (vid && this.clips.includes(vid)) {
-      if (this._clip) this._clip.pause();
-      this._clip = new Audio(`voice/${vid}.mp3`);
-      this._clip.play().catch(() => {});
+      this.playClip(vid).catch(() => {
+        const a = new Audio(`voice/${vid}.wav`);
+        a.play().catch(() => {});
+      });
       return;
     }
     const t = String(text).replace(/<[^>]*>/g, '').replace(/(\d+)만(?! 원)/g, '$1만 원');
