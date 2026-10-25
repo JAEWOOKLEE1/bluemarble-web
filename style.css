@@ -333,6 +333,12 @@ body.web .rotate-hint .web-only { display: block; }
   content: ''; position: absolute; left: 50%; bottom: -8px; transform: translateX(-50%);
   border: 7px solid transparent; border-top-color: #b39ddb; border-bottom: 0;
 }
+/* 위쪽 칸에서는 말 옆에 (꼬리가 말 쪽을 가리킴) */
+.think-bubble.right { transform: translate(18px, -50%); }
+.think-bubble.left { transform: translate(calc(-100% - 18px), -50%); }
+.think-bubble.right::after, .think-bubble.left::after { bottom: auto; top: 50%; transform: translateY(-50%); border: 7px solid transparent; }
+.think-bubble.right::after { left: -14px; border-right-color: #b39ddb; }
+.think-bubble.left::after { left: auto; right: -14px; border-left-color: #b39ddb; }
 .think-bubble .dots i { display: inline-block; font-style: normal; animation: wave 1.2s ease-in-out infinite; }
 .think-bubble .dots i:nth-child(2) { animation-delay: .1s; }
 .think-bubble .dots i:nth-child(3) { animation-delay: .2s; }

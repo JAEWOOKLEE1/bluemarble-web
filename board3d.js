@@ -924,6 +924,7 @@ const Board3D = (() => {
     if (on && !old) {
       const el = document.createElement('div');
       el.className = 'think-bubble';
+      el.style.visibility = 'hidden'; // 말 위치를 잡은 뒤에 보임
       el.innerHTML = '선택중<span class="dots">' + '<i>.</i>'.repeat(6) + '</span>';
       document.body.appendChild(el);
       thinking.set(id, el);
@@ -958,8 +959,14 @@ const Board3D = (() => {
         const tok = tokens[id];
         if (!tok) continue;
         const p = tok.group.position.clone().setY(tok.group.position.y + 0.55).project(camera);
-        el.style.left = `${r.left + (p.x + 1) / 2 * r.width}px`;
-        el.style.top = `${r.top + (1 - p.y) / 2 * r.height}px`;
+        const x = r.left + (p.x + 1) / 2 * r.width;
+        const y = r.top + (1 - p.y) / 2 * r.height;
+        // 위쪽 줄 칸이라 위로 띄우면 화면 밖으로 나가면 옆으로 띄움 (오른쪽 끝이면 왼쪽으로)
+        const side = y - el.offsetHeight - 16 < 4 ? (x + el.offsetWidth + 30 > innerWidth ? 'left' : 'right') : '';
+        if (el.dataset.side !== side) { el.dataset.side = side; el.className = 'think-bubble' + (side ? ' ' + side : ''); }
+        el.style.left = `${x}px`;
+        el.style.top = `${side ? y + 14 : y}px`;
+        el.style.visibility = 'visible';
       }
     }
     const glow = choosing ? 0.25 + 0.2 * Math.sin(time * 6) : 0;

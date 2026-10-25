@@ -2,7 +2,7 @@
 'use strict';
 
 // 게임 버전: 고칠 때마다 올림. 온라인 대전은 같은 버전끼리만 입장 가능
-const GAME_VERSION = '5.3';
+const GAME_VERSION = '5.4';
 // 앱이 인터넷에서 최신 파일을 받아 실행 중인지 (아니면 앱에 들어 있는 버전)
 const IS_ONLINE_BUILD = location.protocol.startsWith('http');
 
@@ -206,14 +206,22 @@ const ESCAPE_SPEECH = '탈출~!';
 const ESCAPE_NOW_SPEECH = '이번 턴에 탈출이에요~';
 
 // 사람이 고민하는 동안 그 말 위에 "선택중……" 말풍선 (모든 폰에)
+const SLOW_THINK_MS = 3000;
+const thinkCount = {}; // 겹쳐서 켜도(바로 + 3초 뒤) 마지막 고민이 끝날 때 꺼지도록 셈
 function thinkFx(p, on) {
   if (game.speed === 0) return;
+  const n = (thinkCount[p.id] || 0) + (on ? 1 : -1);
+  thinkCount[p.id] = Math.max(0, n);
+  if (on ? n !== 1 : n > 0) return;
   Board3D.setThinking(p.id, on);
   if (Net.isHost) Net.broadcast({ t: 'think', pid: p.id, on });
 }
-async function thinking(p, task) {
-  thinkFx(p, true);
-  try { return await task; } finally { thinkFx(p, false); }
+// delay 없이 부르면 바로, delay를 주면 그 시간 동안 결정을 못 하면 말풍선을 띄움
+async function thinking(p, task, delay = 0) {
+  let shown = false;
+  const show = () => { shown = true; thinkFx(p, true); };
+  const timer = delay ? setTimeout(show, delay) : (show(), null);
+  try { return await task; } finally { clearTimeout(timer); if (shown) thinkFx(p, false); }
 }
 
 // 황금열쇠: 금색 열쇠 카드가 뜨고 → 뒤집혀서 내용이 크게 보임 (모든 폰에)
@@ -420,20 +428,20 @@ const yesNo = (title, body, yes, no) =>
   ({ title, body, buttons: [{ label: yes, value: true }, { label: no, value: false, cls: 'secondary' }] });
 
 // ───────── 사람에게 묻기 (이 폰이면 바로, 친구면 네트워크로) ─────────
+// 사람에게 물을 때는 3초 넘게 고민하면 말 위에 "선택중……" 말풍선이 뜸
 function askChoice(p, spec, fallback) {
-  if (p.ctrl === 'local') return showModal(spec);
-  return Net.ask(p.conn, 'modal', spec, fallback);
+  return thinking(p, p.ctrl === 'local' ? showModal(spec) : Net.ask(p.conn, 'modal', spec, fallback), SLOW_THINK_MS);
 }
 async function askRoll(p) {
-  if (p.ctrl === 'local') return waitForRoll();
-  const v = await Net.ask(p.conn, 'roll', null, null);
+  if (p.ctrl === 'local') return thinking(p, waitForRoll(), SLOW_THINK_MS);
+  const v = await thinking(p, Net.ask(p.conn, 'roll', null, null), SLOW_THINK_MS);
   if (!v || !v.dir || !isFinite(v.dir.x) || !isFinite(v.dir.z)) return null;
   return { dir: new THREE.Vector3(v.dir.x, 0, v.dir.z), power: Math.min(15, Math.max(7, +v.power || 10)) };
 }
 async function askCell(p, msg) {
-  if (p.ctrl === 'local') return chooseCell(msg);
+  if (p.ctrl === 'local') return thinking(p, chooseCell(msg), SLOW_THINK_MS);
   const fallback = AI.chooseSpaceTarget(game, p);
-  const v = await Net.ask(p.conn, 'cell', { msg }, fallback);
+  const v = await thinking(p, Net.ask(p.conn, 'cell', { msg }, fallback), SLOW_THINK_MS);
   return Number.isInteger(v) && v >= 0 && v < 40 && v !== 30 ? v : fallback;
 }
 
