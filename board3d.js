@@ -690,7 +690,7 @@ const Board3D = (() => {
       placeCamera(mid);
       const fits = CORNERS.every(c => {
         const p = c.clone().project(camera);
-        return Math.abs(p.x) < 0.97 && Math.abs(p.y) < 0.95;
+        return Math.abs(p.x) < 0.98 && Math.abs(p.y) < 0.985;
       });
       if (fits) hi = mid; else lo = mid;
     }
@@ -710,7 +710,7 @@ const Board3D = (() => {
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
     // 가로로 넓은 화면에서는 조금 더 위에서 내려다봐서 판이 화면 높이를 꽉 채우게
-    if (!userTilted) cam.el = camera.aspect > 1.2 ? 1.18 : 0.98;
+    if (!userTilted) cam.el = camera.aspect > 1.2 ? 1.3 : 0.98;
   }
 
   function setupInput() {

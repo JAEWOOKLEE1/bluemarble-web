@@ -272,34 +272,88 @@ html, body {
   0%, 100% { box-shadow: 0 0 4px 1px rgba(255, 213, 79, .5); }
   50% { box-shadow: 0 0 16px 5px rgba(255, 213, 79, .95); }
 }
+@keyframes curGlowSmall {
+  0%, 100% { box-shadow: 0 0 2px 1px rgba(255, 213, 79, .5); }
+  50% { box-shadow: 0 0 9px 3px rgba(255, 213, 79, 1); }
+}
 
-/* ───────── 휴대폰 가로 화면: 판을 화면 높이 가득, 오른쪽 좁은 열에 사람·버튼 ───────── */
-@media (orientation: landscape) and (max-height: 560px) {
+/* 휴대폰을 세로로 들면 가로로 돌리라는 안내 (앱은 가로로 고정됨) */
+.rotate-hint { display: none; }
+@media (orientation: portrait) and (max-width: 600px) {
+  .rotate-hint {
+    display: flex;
+    position: fixed;
+    inset: 0;
+    z-index: 300;
+    background: var(--bg);
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    font-size: 18px;
+    text-align: center;
+  }
+  .rotate-hint .ic { font-size: 56px; animation: tilt 1.6s ease-in-out infinite; }
+}
+@keyframes tilt { 0%, 30% { transform: rotate(0); } 60%, 100% { transform: rotate(-90deg); } }
+
+/* ───────── 휴대폰 가로 화면: 판이 화면 전체, 나머지는 판 양옆 빈 공간에 작게 ───────── */
+@media (orientation: landscape) and (max-height: 600px) {
+  /* 판 한쪽 옆 빈 공간의 폭 (판은 대략 화면 높이만 한 정사각형) */
+  :root { --side: max(110px, calc((100vw - 100vh * 1.1) / 2 - 10px)); }
   html, body { overflow: hidden; }
   .app { display: block; padding: 0; }
-  .stage {
-    width: 100vw;
-    height: 100vh;
-    display: grid;
-    grid-template-columns: 1fr min(250px, 32vw);
-    grid-template-rows: auto 1fr auto;
-    gap: 6px;
-    padding: 6px;
+  .stage { display: block; width: 100vw; height: 100vh; }
+  .canvas-wrap { position: fixed; inset: 0; width: 100vw; height: 100vh; border-radius: 0; box-shadow: none; }
+
+  /* 오른쪽 위: 말 · 이름 · 돈 아주 작게 (누르면 자세히) */
+  .mini-players {
+    display: flex;
+    position: fixed;
+    top: 6px; right: 6px;
+    width: min(var(--side), 140px);
+    gap: 3px;
+    z-index: 5;
+    cursor: pointer;
   }
-  .canvas-wrap { grid-column: 1; grid-row: 1 / 4; width: 100%; height: auto; min-height: 0; border-radius: 10px; }
-  .mini-players { display: flex; grid-column: 2; grid-row: 1; }
-  .cell-info { grid-column: 2; grid-row: 2; align-self: end; font-size: 11px; padding: 0 2px; min-height: 0; }
-  .hud { grid-column: 2; grid-row: 3; flex-direction: column; align-items: stretch; gap: 6px; padding: 8px; }
-  .message { font-size: 12px; min-height: 0; }
-  #roll-btn { width: 100%; padding: 10px 12px; font-size: 16px; }
-  /* 판 옆 빈 공간(왼쪽)에 세로로 쌓아서 판을 가리지 않게 */
-  .hud-top { flex-direction: column; align-items: flex-start; right: auto; gap: 5px; }
-  .chip-info { font-size: 11px; padding: 3px 8px; }
-  .hud-top .icon-btn { margin-left: 0; width: 30px; height: 30px; font-size: 15px; }
+  .mini { padding: 1px 6px 1px 3px; font-size: 10px; gap: 4px; border-width: 1.5px; border-left-width: 3px; background: rgba(24, 44, 76, .85); }
+  .mini .em { font-size: 12px; }
+  .mini.cur { animation-name: curGlowSmall; }
+
+  /* 오른쪽 아래: 메시지 + 던지기 */
+  .hud {
+    position: fixed;
+    right: 6px; bottom: 6px;
+    width: min(var(--side), 170px);
+    z-index: 5;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 4px;
+    padding: 6px;
+    background: rgba(24, 44, 76, .85);
+  }
+  .message { font-size: 11px; line-height: 1.3; min-height: 0; max-height: 5.2em; overflow: hidden; }
+  #roll-btn { width: 100%; padding: 8px 10px; font-size: 14px; }
+
+  /* 왼쪽: 라운드·기금·버튼(위), 칸 정보(아래), 알림(가운데) */
+  .hud-top { flex-direction: column; align-items: flex-start; right: auto; top: 6px; left: 6px; gap: 4px; }
+  .chip-info { font-size: 10px; padding: 2px 7px; }
+  .hud-top .icon-btn { margin-left: 0; width: 28px; height: 28px; font-size: 14px; }
   #panel-btn { display: block; }
-  .toasts { top: 46px; }
-  .toast { font-size: 12px; padding: 6px 10px; }
-  /* 자세한 정보(보유 땅·기록)는 📋 버튼으로 여는 서랍 */
+  .cell-info {
+    position: fixed;
+    left: 6px; bottom: 6px;
+    width: min(var(--side), 170px);
+    z-index: 5;
+    font-size: 10px;
+    background: rgba(10, 20, 38, .75);
+    border-radius: 8px;
+    padding: 5px 7px;
+    min-height: 0;
+  }
+  .toasts { left: 6px; right: auto; top: 112px; width: min(var(--side), 190px); align-items: stretch; }
+  .toast { font-size: 11px; padding: 5px 8px; }
+  /* 자세한 정보(보유 땅·기록)는 📋 버튼이나 사람 표시를 누르면 여는 서랍 */
   .side {
     position: fixed;
     top: 0; left: 0; bottom: 0;

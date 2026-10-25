@@ -2,7 +2,7 @@
 'use strict';
 
 // 게임 버전: 고칠 때마다 올림. 온라인 대전은 같은 버전끼리만 입장 가능
-const GAME_VERSION = '3.5';
+const GAME_VERSION = '3.6';
 // 앱이 인터넷에서 최신 파일을 받아 실행 중인지 (아니면 앱에 들어 있는 버전)
 const IS_ONLINE_BUILD = location.protocol.startsWith('http');
 
@@ -1400,6 +1400,7 @@ window.addEventListener('DOMContentLoaded', async () => {
   document.addEventListener('pointerdown', () => Sound.ensure(), { once: true });
   // 가로 화면: 📋 버튼으로 자세한 정보 서랍 열기, 바깥(보드)을 누르면 닫기
   $('panel-btn').onclick = e => { e.stopPropagation(); document.body.classList.toggle('panel-open'); };
+  $('mini-players').onclick = e => { e.stopPropagation(); document.body.classList.toggle('panel-open'); };
   $('scene').addEventListener('pointerdown', () => document.body.classList.remove('panel-open'));
   renderCenter();
 
