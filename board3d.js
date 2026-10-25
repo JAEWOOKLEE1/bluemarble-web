@@ -706,11 +706,13 @@ const Board3D = (() => {
     fitDist = hi;
     // 가로 화면: 판을 왼쪽 끝에 붙여서 왼쪽 여백이 남지 않게 (남는 공간은 오른쪽으로)
     fitShift = 0;
-    if (camera.aspect > 1.2) {
-      placeCamera(hi);
-      const minX = Math.min(...corners().map(c => c.clone().project(camera).x));
-      fitShift = Math.max(0, (minX + 0.98) / 2 * canvas.clientWidth);
-    }
+    placeCamera(hi);
+    const xs = corners().map(c => c.clone().project(camera).x);
+    const w = canvas.clientWidth;
+    if (camera.aspect > 1.2) fitShift = Math.max(0, (Math.min(...xs) + 0.98) / 2 * w);
+    // 판 오른쪽 끝의 화면 위치(px)를 CSS로 알려줌 → 자세히 보기 창을 판 옆 빈 공간에 맞춰 염
+    const right = Math.round((Math.max(...xs) + 1) / 2 * w - fitShift);
+    document.documentElement.style.setProperty('--board-right', `${right}px`);
     return hi;
   }
   function updateCamera() {
