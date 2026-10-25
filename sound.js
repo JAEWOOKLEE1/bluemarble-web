@@ -145,11 +145,15 @@ const Sound = {
       .then(list => {
         this.clips = Array.isArray(list) ? list : [];
         for (const v of this.clips) {
-          fetch(`voice/${v}.wav`).then(r => (r.ok ? r.arrayBuffer() : null))
+          fetch(this.clipUrl(v)).then(r => (r.ok ? r.arrayBuffer() : null))
             .then(b => { if (b) this.clipData[v] = b; }).catch(() => {});
         }
       })
       .catch(() => {});
+  },
+  // 게임 버전을 붙여서, 대사를 새로 녹음해 올리면 폰에 남아 있던 옛 파일 대신 새 파일을 받게 함
+  clipUrl(vid) {
+    return `voice/${vid}.wav?v=${typeof GAME_VERSION === 'string' ? GAME_VERSION : ''}`;
   },
   // Web Audio로 정확히 끝까지 재생 (HTML Audio는 폰에서 짧은 파일 끝을 자르기도 함)
   async playClip(vid) {
@@ -157,7 +161,7 @@ const Sound = {
     if (!ctx) throw new Error('no audio');
     let buf = this.clipBuf[vid];
     if (!buf) {
-      const data = this.clipData[vid] || await (await fetch(`voice/${vid}.wav`)).arrayBuffer();
+      const data = this.clipData[vid] || await (await fetch(this.clipUrl(vid))).arrayBuffer();
       buf = this.clipBuf[vid] = await ctx.decodeAudioData(data.slice(0));
     }
     if (this._clip) { try { this._clip.stop(); } catch (e) { /* 이미 끝남 */ } }
@@ -171,7 +175,7 @@ const Sound = {
     if (this.muted || !text) return;
     if (vid && this.clips.includes(vid)) {
       this.playClip(vid).catch(() => {
-        const a = new Audio(`voice/${vid}.wav`);
+        const a = new Audio(this.clipUrl(vid));
         a.play().catch(() => {});
       });
       return;

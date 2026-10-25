@@ -2,7 +2,7 @@
 'use strict';
 
 // 게임 버전: 고칠 때마다 올림. 온라인 대전은 같은 버전끼리만 입장 가능
-const GAME_VERSION = '5.0';
+const GAME_VERSION = '5.1';
 // 앱이 인터넷에서 최신 파일을 받아 실행 중인지 (아니면 앱에 들어 있는 버전)
 const IS_ONLINE_BUILD = location.protocol.startsWith('http');
 
@@ -1633,7 +1633,12 @@ async function answerAsk(msg) {
 function setupWebFullscreen() {
   const standalone = matchMedia('(display-mode: fullscreen), (display-mode: standalone)').matches;
   if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
-    navigator.serviceWorker.register('sw.js').catch(() => { /* 설치 기능만 빠짐 */ });
+    if (window.AndroidTTS) {
+      // 앱에서는 필요 없음. 예전에 등록된 것이 옛 파일을 내주지 않도록 해제
+      navigator.serviceWorker.getRegistrations().then(rs => rs.forEach(r => r.unregister())).catch(() => {});
+    } else {
+      navigator.serviceWorker.register('sw.js').catch(() => { /* 설치 기능만 빠짐 */ });
+    }
   }
   if (window.AndroidTTS || standalone || !document.documentElement.requestFullscreen) return;
   document.body.classList.add('web');
