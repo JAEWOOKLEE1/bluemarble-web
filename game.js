@@ -2,7 +2,7 @@
 'use strict';
 
 // 게임 버전: 고칠 때마다 올림. 온라인 대전은 같은 버전끼리만 입장 가능
-const GAME_VERSION = '4.6';
+const GAME_VERSION = '4.7';
 // 앱이 인터넷에서 최신 파일을 받아 실행 중인지 (아니면 앱에 들어 있는 버전)
 const IS_ONLINE_BUILD = location.protocol.startsWith('http');
 
@@ -169,6 +169,15 @@ function voice(text, vid) {
   Sound.say(text, vid);
   if (Net.isHost) Net.broadcast({ t: 'say', text, vid });
 }
+// 그 사람 폰에서만 들리는 음성 (예: "마이턴!", "원하는 도시를 선택하세요~")
+function sayTo(p, text, vid) {
+  if (game.speed === 0) return;
+  if (p.ctrl === 'local') Sound.say(text, vid);
+  else if (p.ctrl === 'remote') Net.send(p.conn, { t: 'say', text, vid });
+}
+// 주사위 합 읽기 (2와 12는 항상 더블이라 숫자 대신 "더블!")
+const NUM_WORDS = { 3: '삼', 4: '사', 5: '오', 6: '육', 7: '칠', 8: '팔', 9: '구', 10: '십', 11: '십일' };
+const CHOOSE_SPEECH = '원하는 도시를 선택하세요~';
 // 황금열쇠 카드의 녹음 파일 이름: 카드 순서대로 key01 ~ key17
 const keyVid = card => 'key' + String(KEY_CARDS.indexOf(card) + 1).padStart(2, '0');
 // 읽어줄 대사: 느낌표로 끊지 않고 사람이 말하듯 이어지는 '~요' 말투 (기계 음성이 덜 딱딱하게 들림)
@@ -556,6 +565,8 @@ async function doRoll(p) {
   }
   log(`🎲 ${p.name}: ${a} + ${b} = ${a + b}${a === b ? ' (더블!)' : ''}`, 'dice');
   setMessage(`${p.name}: <b>${a} + ${b} = ${a + b}</b>${a === b ? ' 더블!' : ''}`);
+  if (a === b) voice('더블!', 'double');
+  else voice(`${NUM_WORDS[a + b]}!`, `num${String(a + b).padStart(2, '0')}`);
   await sleep(isPerson(p) ? 300 : 450);
   return [a, b];
 }
@@ -752,6 +763,7 @@ async function startBonusBuild(p) {
   }
   let pick = null;
   if (isPerson(p)) {
+    sayTo(p, CHOOSE_SPEECH, 'choose');
     // 통행료가 많이 오르는 순으로 최대 10개
     const list = cands.slice().sort((a, b) => tollGain(b.c, b.i, p.id) - tollGain(a.c, a.i, p.id)).slice(0, 10);
     const key = await askChoice(p, {
@@ -925,6 +937,7 @@ async function landProperty(p, c) {
       }
     }
     log(`💰 ${j(p.name, '이/가')} ${owner.name}에게 ${c.name} 통행료 ${fmt(toll)}을 냅니다`, 'bad');
+    voice('이럴수가..', 'ouch');
     if (!isPerson(p)) await sleep(AI_DELAY / 2);
     await pay(p, toll, owner);
   }
@@ -951,6 +964,7 @@ async function takeTurn(p) {
   render();
   setMessage(`<b>${p.name}</b>의 차례`);
   if (!isPerson(p)) await sleep(AI_DELAY);
+  else sayTo(p, '마이턴!', 'myturn');
 
   // 우주여행: 원하는 칸으로 이동
   if (p.spaceTravel) {
@@ -965,6 +979,7 @@ async function takeTurn(p) {
     let target;
     if (isPerson(p)) {
       if (p.ctrl === 'remote') setMessage(`🚀 <b>${p.name}</b>이(가) 우주여행 갈 곳을 고르는 중…`);
+      sayTo(p, CHOOSE_SPEECH, 'choose');
       target = await askCell(p, '🚀 <b>우주여행!</b> 보드에서 가고 싶은 칸을 누르세요');
     } else {
       await sleep(AI_DELAY);
