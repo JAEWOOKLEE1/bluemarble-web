@@ -8,6 +8,8 @@ const Board3D = (() => {
   const DIE = 0.62;     // 주사위 한 변
   const WALL = 4.4;     // 주사위가 굴러다니는 안쪽 영역 경계
   const SLOTS = [[-0.22, -0.12], [0.22, -0.12], [0, -0.32], [0, 0.1]]; // 칸 안 말 위치 (가로, 안쪽방향)
+  // 판 가로 늘림 비율: 가로로 긴 화면이면 판도 가로로 넓은 직사각형으로 만들어 화면을 꽉 채움 (init에서 정함)
+  let SX = 1;
 
   let renderer, scene, camera, canvas, clock, raycaster;
   let world;
@@ -33,10 +35,10 @@ const Board3D = (() => {
   }
   function tileFrame(i) {
     const { r, c } = gridPos(i);
-    const x = c - 6, z = r - 6;
+    const x = (c - 6) * SX, z = r - 6;
     let inward;
     if (i % 10 === 0) inward = new THREE.Vector3(-Math.sign(x), 0, -Math.sign(z)).normalize();
-    else if (Math.abs(z) === 5) inward = new THREE.Vector3(0, 0, -Math.sign(z));
+    else if (r === 1 || r === 11) inward = new THREE.Vector3(0, 0, -Math.sign(z));
     else inward = new THREE.Vector3(-Math.sign(x), 0, 0);
     const tangent = new THREE.Vector3(inward.z, 0, -inward.x);
     return { center: new THREE.Vector3(x, 0, z), inward, tangent };
@@ -46,7 +48,7 @@ const Board3D = (() => {
     const [a, b] = SLOTS[pid % SLOTS.length];
     return t.center.clone()
       .add(t.tangent.clone().multiplyScalar(a))
-      .add(t.inward.clone().multiplyScalar(b))
+      .add(t.inward.clone().multiplyScalar(b * (Math.abs(t.inward.x) > 0.9 ? SX : 1)))
       .setY(TOP);
   }
 
@@ -197,7 +199,9 @@ const Board3D = (() => {
     if (!level || !owner) return;
     const t = tiles[idx];
     const g = makeBuilding(level, owner.color);
-    g.position.copy(t.center).add(t.inward.clone().multiplyScalar(0.29)).setY(TOP);
+    // 색 띠(안쪽 가장자리) 근처에 세움. 좌우 줄 칸은 가로로 넓으니 그만큼 더 안쪽
+    const off = (Math.abs(t.inward.x) > 0.9 ? 0.47 * SX : 0.47) - 0.18;
+    g.position.copy(t.center).add(t.inward.clone().multiplyScalar(off)).setY(TOP);
     g.rotation.y = Math.atan2(t.inward.x, t.inward.z);
     scene.add(g);
     bldMeshes[idx] = g;
@@ -208,30 +212,31 @@ const Board3D = (() => {
 
   // ───────── 칸 텍스처 ─────────
   function drawTile(i, cell, owner) {
-    const t = tiles[i], ctx = t.ctx, S = 256;
+    // 칸 그림은 가로 W × 세로 H (판을 가로로 늘리면 W도 늘어남)
+    const t = tiles[i], ctx = t.ctx, W = ctx.canvas.width, H = ctx.canvas.height;
     const bg = { start: '#ffe9a8', island: '#ffe9a8', fund: '#ffe9a8', space: '#ffe9a8', key: '#fff3c4', tax: '#e3f2fd' }[cell.type] || '#f6f1e4';
     ctx.globalAlpha = 1;
     ctx.fillStyle = bg;
-    ctx.fillRect(0, 0, S, S);
+    ctx.fillRect(0, 0, W, H);
     if (owner) {
       ctx.globalAlpha = 0.3;
       ctx.fillStyle = owner.color;
-      ctx.fillRect(0, 0, S, S);
+      ctx.fillRect(0, 0, W, H);
       ctx.globalAlpha = 1;
     }
-    let box = { x: 0, y: 0, w: S, h: S };
+    let box = { x: 0, y: 0, w: W, h: H };
     if (cell.type === 'city' || cell.type === 'tour') {
       const B = 58, ix = Math.round(t.inward.x), iz = Math.round(t.inward.z);
       ctx.fillStyle = cell.type === 'city' ? GROUPS[cell.group].color : '#90a4ae';
-      if (iz < 0) { ctx.fillRect(0, 0, S, B); box = { x: 0, y: B, w: S, h: S - B }; }
-      else if (iz > 0) { ctx.fillRect(0, S - B, S, B); box = { x: 0, y: 0, w: S, h: S - B }; }
-      else if (ix > 0) { ctx.fillRect(S - B, 0, B, S); box = { x: 0, y: 0, w: S - B, h: S }; }
-      else { ctx.fillRect(0, 0, B, S); box = { x: B, y: 0, w: S - B, h: S }; }
+      if (iz < 0) { ctx.fillRect(0, 0, W, B); box = { x: 0, y: B, w: W, h: H - B }; }
+      else if (iz > 0) { ctx.fillRect(0, H - B, W, B); box = { x: 0, y: 0, w: W, h: H - B }; }
+      else if (ix > 0) { ctx.fillRect(W - B, 0, B, H); box = { x: 0, y: 0, w: W - B, h: H }; }
+      else { ctx.fillRect(0, 0, B, H); box = { x: B, y: 0, w: W - B, h: H }; }
     }
     if (owner) {
       ctx.strokeStyle = owner.color;
       ctx.lineWidth = 22;
-      ctx.strokeRect(11, 11, S - 22, S - 22);
+      ctx.strokeRect(11, 11, W - 22, H - 22);
     }
     const cx = box.x + box.w / 2, cy = box.y + box.h / 2;
     ctx.textAlign = 'center';
@@ -259,27 +264,29 @@ const Board3D = (() => {
 
   function centerTexture() {
     const c = document.createElement('canvas');
-    c.width = c.height = 1024;
+    c.width = Math.round(1024 * SX);
+    c.height = 1024;
     const ctx = c.getContext('2d');
-    const g = ctx.createRadialGradient(512, 450, 60, 512, 512, 720);
+    const mx = c.width / 2;
+    const g = ctx.createRadialGradient(mx, 450, 60, mx, 512, 720 * SX);
     g.addColorStop(0, '#2a5ca8');
     g.addColorStop(1, '#0d2244');
     ctx.fillStyle = g;
-    ctx.fillRect(0, 0, 1024, 1024);
+    ctx.fillRect(0, 0, c.width, 1024);
     ctx.strokeStyle = 'rgba(255,255,255,.07)';
     ctx.lineWidth = 3;
-    for (let r = 120; r < 700; r += 90) { ctx.beginPath(); ctx.arc(512, 512, r, 0, Math.PI * 2); ctx.stroke(); }
+    for (let r = 120; r < 700 * SX; r += 90) { ctx.beginPath(); ctx.arc(mx, 512, r, 0, Math.PI * 2); ctx.stroke(); }
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    const tg = ctx.createLinearGradient(200, 0, 824, 0);
+    const tg = ctx.createLinearGradient(mx - 312, 0, mx + 312, 0);
     tg.addColorStop(0, '#ffd54f');
     tg.addColorStop(1, '#ff8a65');
     ctx.fillStyle = tg;
     ctx.font = `900 118px ${FONT}`;
-    ctx.fillText('BLUE MARBLE', 512, 300);
+    ctx.fillText('BLUE MARBLE', mx, 300);
     ctx.fillStyle = 'rgba(255,255,255,.55)';
     ctx.font = `bold 58px ${FONT}`;
-    ctx.fillText('부 루 마 블', 512, 400);
+    ctx.fillText('부 루 마 블', mx, 400);
     const tex = new THREE.CanvasTexture(c);
     tex.encoding = THREE.sRGBEncoding;
     return tex;
@@ -344,8 +351,8 @@ const Board3D = (() => {
     floor.position.set(0, 0.02, 0);
     world.addBody(floor);
     const walls = [
-      [new CANNON.Vec3(-WALL, 0, 0), Math.PI / 2],
-      [new CANNON.Vec3(WALL, 0, 0), -Math.PI / 2],
+      [new CANNON.Vec3(-WALL * SX, 0, 0), Math.PI / 2],
+      [new CANNON.Vec3(WALL * SX, 0, 0), -Math.PI / 2],
       [new CANNON.Vec3(0, 0, -WALL), 0],
       [new CANNON.Vec3(0, 0, WALL), Math.PI],
     ];
@@ -679,16 +686,17 @@ const Board3D = (() => {
     camera.updateMatrixWorld();
   }
   // 보드 네 모서리가 화면 안에 꼭 맞게 들어오는 거리 (이분 탐색)
-  let fitKey = '', fitDist = 16;
-  const CORNERS = [[-5.8, -5.8], [5.8, -5.8], [-5.8, 5.8], [5.8, 5.8]].map(([x, z]) => new THREE.Vector3(x, 0, z));
+  let fitKey = '', fitDist = 16, fitShift = 0;
+  const corners = () => [[-1, -1], [1, -1], [-1, 1], [1, 1]].map(([sx, sz]) => new THREE.Vector3(sx * (5.5 * SX + 0.3), 0, sz * 5.8));
   function fitDistance() {
     const key = `${cam.az.toFixed(3)}|${cam.el.toFixed(3)}|${camera.aspect.toFixed(3)}`;
     if (key === fitKey) return fitDist;
+    camera.clearViewOffset();
     let lo = 4, hi = 60;
     for (let i = 0; i < 18; i++) {
       const mid = (lo + hi) / 2;
       placeCamera(mid);
-      const fits = CORNERS.every(c => {
+      const fits = corners().every(c => {
         const p = c.clone().project(camera);
         return Math.abs(p.x) < 0.98 && Math.abs(p.y) < 0.985;
       });
@@ -696,15 +704,26 @@ const Board3D = (() => {
     }
     fitKey = key;
     fitDist = hi;
+    // 가로 화면: 판을 왼쪽 끝에 붙여서 왼쪽 여백이 남지 않게 (남는 공간은 오른쪽으로)
+    fitShift = 0;
+    if (camera.aspect > 1.2) {
+      placeCamera(hi);
+      const minX = Math.min(...corners().map(c => c.clone().project(camera).x));
+      fitShift = Math.max(0, (minX + 0.98) / 2 * canvas.clientWidth);
+    }
     return hi;
   }
   function updateCamera() {
-    placeCamera(fitDistance() * cam.zoom);
+    const dist = fitDistance();
+    placeCamera(dist * cam.zoom);
+    const w = canvas.clientWidth, h = canvas.clientHeight;
+    if (fitShift > 0 && cam.zoom >= 1) camera.setViewOffset(w, h, fitShift, 0, w, h);
+    else camera.clearViewOffset();
   }
 
   let userTilted = false; // 사용자가 직접 기울기를 바꿨으면 자동 조정 안 함
-  // 가로 화면 카메라 기울기: 낮을수록 판이 옆으로 넓게 펼쳐져 가로 공간을 더 씀
-  const LANDSCAPE_EL = 0.78;
+  // 가로 화면 카메라 기울기: 거의 위에서 내려다봐서 먼 쪽(위쪽) 도시도 가까운 쪽만큼 잘 보이게
+  const LANDSCAPE_EL = 1.33;
   function resize() {
     const w = canvas.clientWidth, h = canvas.clientHeight;
     if (!w || !h) return;
@@ -814,6 +833,8 @@ const Board3D = (() => {
     init(canvasEl, cells, h) {
       canvas = canvasEl;
       handlers = h;
+      // 가로로 긴 화면이면 판을 아주 살짝만 가로로 늘림 (가로:세로 ≈ 1.25:1)
+      SX = canvas.clientWidth / Math.max(1, canvas.clientHeight) > 1.3 ? 1.25 : 1;
       renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
       renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
       renderer.outputEncoding = THREE.sRGBEncoding;
@@ -830,15 +851,15 @@ const Board3D = (() => {
       sun.position.set(5, 12, 6);
       sun.castShadow = true;
       sun.shadow.mapSize.set(2048, 2048);
-      Object.assign(sun.shadow.camera, { left: -7, right: 7, top: 7, bottom: -7, near: 1, far: 30 });
+      Object.assign(sun.shadow.camera, { left: -7 * SX, right: 7 * SX, top: 7, bottom: -7, near: 1, far: 30 });
       sun.shadow.bias = -0.0005;
       scene.add(sun);
 
-      const base = new THREE.Mesh(new THREE.BoxGeometry(11.6, 0.4, 11.6), new THREE.MeshStandardMaterial({ color: '#1b2c4a', roughness: 0.6 }));
+      const base = new THREE.Mesh(new THREE.BoxGeometry(11 * SX + 0.6, 0.4, 11.6), new THREE.MeshStandardMaterial({ color: '#1b2c4a', roughness: 0.6 }));
       base.position.y = -0.2;
       base.receiveShadow = true;
       scene.add(base);
-      const center = new THREE.Mesh(new THREE.PlaneGeometry(9, 9), new THREE.MeshStandardMaterial({ map: centerTexture(), roughness: 0.9 }));
+      const center = new THREE.Mesh(new THREE.PlaneGeometry(9 * SX, 9), new THREE.MeshStandardMaterial({ map: centerTexture(), roughness: 0.9 }));
       center.rotation.x = -Math.PI / 2;
       center.position.y = 0.02;
       center.receiveShadow = true;
@@ -848,16 +869,17 @@ const Board3D = (() => {
       const aniso = renderer.capabilities.getMaxAnisotropy();
       for (const cell of cells) {
         const f = tileFrame(cell.idx);
-        const block = new THREE.Mesh(new THREE.BoxGeometry(0.96, 0.1, 0.96), sideMat);
+        const block = new THREE.Mesh(new THREE.BoxGeometry(0.96 * SX, 0.1, 0.96), sideMat);
         block.position.copy(f.center).setY(0.05);
         block.receiveShadow = true;
         scene.add(block);
         const cv = document.createElement('canvas');
-        cv.width = cv.height = 256;
+        cv.width = Math.round(256 * SX);
+        cv.height = 256;
         const tex = new THREE.CanvasTexture(cv);
         tex.encoding = THREE.sRGBEncoding;
         tex.anisotropy = aniso;
-        const top = new THREE.Mesh(new THREE.PlaneGeometry(0.94, 0.94),
+        const top = new THREE.Mesh(new THREE.PlaneGeometry(0.94 * SX, 0.94),
           new THREE.MeshStandardMaterial({ map: tex, roughness: 0.85, emissive: new THREE.Color('#ffd54f'), emissiveIntensity: 0 }));
         top.rotation.x = -Math.PI / 2;
         top.position.copy(f.center).setY(TOP + 0.001);
