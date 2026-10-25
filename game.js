@@ -2,7 +2,7 @@
 'use strict';
 
 // 게임 버전: 고칠 때마다 올림. 온라인 대전은 같은 버전끼리만 입장 가능
-const GAME_VERSION = '4.7';
+const GAME_VERSION = '4.8';
 // 앱이 인터넷에서 최신 파일을 받아 실행 중인지 (아니면 앱에 들어 있는 버전)
 const IS_ONLINE_BUILD = location.protocol.startsWith('http');
 
@@ -29,6 +29,7 @@ const ANIMALS = {
   deer: { name: '사슴', emoji: '🦌' },
   wolf: { name: '늑대', emoji: '🐺' },
   hippo: { name: '하마', emoji: '🦛' },
+  koala: { name: '코알라', emoji: '🐨' },
 };
 
 const GROUPS = [
@@ -937,7 +938,6 @@ async function landProperty(p, c) {
       }
     }
     log(`💰 ${j(p.name, '이/가')} ${owner.name}에게 ${c.name} 통행료 ${fmt(toll)}을 냅니다`, 'bad');
-    voice('이럴수가..', 'ouch');
     if (!isPerson(p)) await sleep(AI_DELAY / 2);
     await pay(p, toll, owner);
   }
@@ -1174,14 +1174,68 @@ async function runGame(maxRounds) {
 // ───────── 혼자 하기 ─────────
 async function soloFlow() {
   const animal = await pickAnimal('내 말을 고르세요');
-  const rounds = await pickRounds(`${ANIMALS[animal].emoji} ${j(ANIMALS[animal].name, '으로/로')} 플레이합니다`);
+  const aiCount = await showModal({
+    title: '🤖 AI 몇 명과 할까요?',
+    body: `${ANIMALS[animal].emoji} ${j(ANIMALS[animal].name, '으로/로')} 플레이합니다`,
+    buttons: [
+      { label: 'AI 1명 (2인)', value: 1, cls: 'secondary' },
+      { label: 'AI 2명 (3인)', value: 2 },
+      { label: 'AI 3명 (4인)', value: 3, cls: 'secondary' },
+    ],
+  });
+  const rounds = await pickRounds(`${aiCount + 1}명이 플레이합니다`);
   const others = shuffle(Object.keys(ANIMALS).filter(a => a !== animal));
-  game.players = [
-    { ...BASE_PLAYER, id: 0, name: '나', label: '나', color: SEAT_COLORS[0], ctrl: 'local', animal },
-    { ...BASE_PLAYER, id: 1, name: 'AI 1', label: 'AI 1 (공격형)', color: SEAT_COLORS[1], ctrl: 'ai', profile: 'aggressive', animal: others[0] },
-    { ...BASE_PLAYER, id: 2, name: 'AI 2', label: 'AI 2 (신중형)', color: SEAT_COLORS[2], ctrl: 'ai', profile: 'cautious', animal: others[1] },
-  ];
+  const players = [{ ...BASE_PLAYER, name: '나', label: '나', ctrl: 'local', animal }];
+  for (let i = 0; i < aiCount; i++) {
+    const profile = i % 2 ? 'cautious' : 'aggressive';
+    players.push({ ...BASE_PLAYER, name: `AI ${i + 1}`, label: `AI ${i + 1} (${AI.profiles[profile].label})`, ctrl: 'ai', profile, animal: others[i] });
+  }
+  game.players = await drawOrder(players);
   await runGame(rounds);
+}
+
+// ───────── 순서 정하기: 뒤집힌 카드를 한 장씩 뽑아 1등부터 차례대로 ─────────
+// 사람은 직접 고르고(친구는 자기 폰에서), AI는 남은 카드 중 아무거나. 뽑은 순위대로 자리(id·색)를 다시 매김
+async function drawOrder(players) {
+  const n = players.length;
+  const deck = shuffle(Array.from({ length: n }, (_, i) => i + 1)); // 카드 자리 → 순위
+  const taken = new Array(n).fill(null);
+  const rankOf = new Map();
+  // 뒤집힌 카드를 눌러도 아래 'n번 카드' 버튼을 누른 것과 같음 (친구 폰에서도 그대로 동작하도록 HTML 안에 넣음)
+  const table = () => '<div class="draw-cards">' + deck.map((r, i) => taken[i] === null
+    ? `<span class="dcard back" onclick="[...document.querySelectorAll('#modal-buttons button')].find(b => b.textContent.endsWith(' ${i + 1}번 카드'))?.click()">?</span>`
+    : `<span class="dcard open">${r}등<small>${ANIMALS[taken[i].animal].emoji} ${taken[i].name}</small></span>`).join('') + '</div>';
+  log('🃏 카드를 뽑아 순서를 정합니다', 'round');
+  for (const p of players) {
+    const free = deck.map((_, i) => i).filter(i => taken[i] === null);
+    let slot;
+    if (isPerson(p) && free.length > 1) {
+      const fallback = free[Math.floor(Math.random() * free.length)];
+      const v = await askChoice(p, {
+        title: '🃏 순서 정하기',
+        body: `${ANIMALS[p.animal].emoji} <b>${p.name}</b>${p.name === '나' ? '' : '님'}, 카드를 한 장 골라요!<br>숫자가 작을수록 먼저 시작해요${table()}`,
+        buttons: free.map(i => ({ label: `🂠 ${i + 1}번 카드`, value: i, cls: 'secondary' })),
+      }, fallback);
+      slot = free.includes(v) ? v : fallback;
+    } else {
+      slot = free[Math.floor(Math.random() * free.length)];
+      await sleep(AI_DELAY / 2);
+    }
+    taken[slot] = p;
+    rankOf.set(p, deck[slot]);
+    sfx('sparkle');
+    log(`🃏 ${ANIMALS[p.animal].emoji} ${p.name}: ${deck[slot]}등`, deck[slot] === 1 ? 'good' : '');
+    toast(`🃏 ${ANIMALS[p.animal].emoji} <b>${p.name}</b> ${deck[slot]}등!`, deck[slot] === 1 ? 'sell' : '');
+  }
+  const ordered = players.slice().sort((a, b) => rankOf.get(a) - rankOf.get(b));
+  ordered.forEach((p, i) => { p.id = i; p.color = SEAT_COLORS[i]; });
+  const result = ordered.map((p, i) => `${i + 1}등 ${ANIMALS[p.animal].emoji} ${p.name}`).join(' → ');
+  log(`🏁 순서: ${result}`, 'round');
+  if (Net.isHost) Net.broadcast({ t: 'toast', html: `🏁 순서: ${result}`, cls: 'sell' });
+  if (players.some(p => p.ctrl === 'local')) {
+    await showModal({ title: '🃏 순서가 정해졌어요!', body: table(), buttons: [{ label: '▶ 시작!', value: true }] });
+  }
+  return ordered;
 }
 
 function pickAnimal(text, taken = []) {
@@ -1298,14 +1352,15 @@ async function hostFlow() {
   lobby.open = false;
 
   let aiN = 0;
-  game.players = lobby.seats.map((s, i) => {
+  const seated = lobby.seats.map(s => {
     const isAI = s.ctrl === 'ai';
     const profile = isAI ? (++aiN % 2 ? 'aggressive' : 'cautious') : 'cautious';
     return {
-      ...BASE_PLAYER, id: i, name: s.name, color: SEAT_COLORS[i], animal: s.animal, ctrl: s.ctrl, conn: s.conn || null, profile,
+      ...BASE_PLAYER, name: s.name, animal: s.animal, ctrl: s.ctrl, conn: s.conn || null, profile,
       label: isAI ? `${s.name} (${AI.profiles[profile].label})` : s.name,
     };
   });
+  game.players = await drawOrder(seated);
   game.maxRounds = rounds;
   for (const p of game.players) {
     if (p.ctrl === 'remote') Net.send(p.conn, { t: 'start', you: p.id, state: fullSnapshot() });
@@ -1573,6 +1628,30 @@ async function answerAsk(msg) {
   Net.reply(msg.id, value);
 }
 
+// ───────── 링크(크롬)로 할 때: 주소창 없이 전체화면 + 가로로 고정 ─────────
+// 앱(AndroidTTS 있음)이나 홈 화면에 추가해서 연 경우(standalone)는 이미 전체화면이라 건너뜀
+function setupWebFullscreen() {
+  const standalone = matchMedia('(display-mode: fullscreen), (display-mode: standalone)').matches;
+  if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
+    navigator.serviceWorker.register('sw.js').catch(() => { /* 설치 기능만 빠짐 */ });
+  }
+  if (window.AndroidTTS || standalone || !document.documentElement.requestFullscreen) return;
+  document.body.classList.add('web');
+  const btn = $('full-btn');
+  const goFull = () => {
+    if (document.fullscreenElement) return;
+    document.documentElement.requestFullscreen({ navigationUI: 'hide' })
+      .then(() => screen.orientation && screen.orientation.lock && screen.orientation.lock('landscape'))
+      .catch(() => { /* 브라우저가 막으면 그냥 지금 화면으로 */ });
+  };
+  const sync = () => btn.classList.toggle('hidden', !!document.fullscreenElement);
+  btn.onclick = e => { e.stopPropagation(); goFull(); };
+  document.addEventListener('fullscreenchange', sync);
+  // 첫 터치 때 자동으로 전체화면 (브라우저는 터치가 있어야 전체화면을 허락함)
+  document.addEventListener('pointerup', goFull, { once: true });
+  sync();
+}
+
 // ───────── 시작 ─────────
 window.addEventListener('DOMContentLoaded', async () => {
   initCells();
@@ -1584,6 +1663,7 @@ window.addEventListener('DOMContentLoaded', async () => {
   };
   document.addEventListener('pointerdown', () => Sound.ensure(), { once: true });
   Sound.loadClips();
+  setupWebFullscreen();
   // 가로 화면: 📋 버튼으로 자세한 정보 서랍 열기, 바깥(보드)을 누르면 닫기
   $('panel-btn').onclick = e => { e.stopPropagation(); document.body.classList.toggle('panel-open'); };
   $('mini-players').onclick = e => { e.stopPropagation(); document.body.classList.toggle('panel-open'); };
@@ -1597,7 +1677,7 @@ window.addEventListener('DOMContentLoaded', async () => {
     body: `시작 자금 ${fmt(START_CASH)} · 월급 ${fmt(SALARY)}<br>
       건물은 1바퀴째 별장, 2바퀴째 빌딩, 3바퀴째부터 호텔까지!<br>
       같은 색 도시를 모두 가지면 통행료 2배<br><br>어떻게 플레이할까요?
-      <div class="hint">v${GAME_VERSION} · ${IS_ONLINE_BUILD ? '✅ 최신 버전 자동 업데이트됨' : '📦 앱 내장 버전 (인터넷 연결 시 자동 업데이트)'}</div>`,
+      <div class="hint">v${GAME_VERSION} · ${IS_ONLINE_BUILD ? '✅ 최신 버전 자동 업데이트됨' : '📦 앱 내장 버전 (인터넷 연결 시 자동 업데이트)'}<br>🎙️ 음성: 타입캐스트(Typecast) 베리</div>`,
     buttons: [
       ...(session ? [{ label: `🔄 온라인 게임 다시 들어가기 (방 ${session.code})`, value: 'rejoin' }] : []),
       ...(saved ? [{ label: `▶ 이어하기 (${saved.round}/${saved.maxRounds} 라운드)`, value: 'resume' }] : []),

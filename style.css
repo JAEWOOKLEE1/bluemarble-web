@@ -318,6 +318,18 @@ html, body {
 }
 
 /* 휴대폰을 세로로 들면 가로로 돌리라는 안내 (앱은 가로로 고정됨) */
+.icon-btn.hidden { display: none; }
+.rotate-hint .web-only { display: none; font-size: 14px; opacity: .8; margin-top: 10px; }
+body.web .rotate-hint .web-only { display: block; }
+
+/* 순서 정하기 카드 */
+.draw-cards { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 10px; }
+.dcard { width: 64px; height: 86px; border-radius: 10px; display: flex; flex-direction: column; align-items: center; justify-content: center; font-weight: 800; font-size: 20px; box-shadow: 0 3px 8px rgba(0,0,0,.25); }
+.dcard.back { cursor: pointer; background: repeating-linear-gradient(45deg, #7e57c2 0 8px, #9575cd 8px 16px); color: #ffe082; border: 3px solid #ffd54f; }
+.dcard.open { background: #fffde7; color: #4a148c; border: 3px solid #ffd54f; animation: flip .4s ease-out; }
+.dcard small { font-size: 11px; font-weight: 600; margin-top: 4px; text-align: center; }
+@keyframes flip { from { transform: rotateY(90deg); } to { transform: rotateY(0); } }
+
 .rotate-hint { display: none; }
 @media (orientation: portrait) and (max-width: 600px) {
   .rotate-hint {

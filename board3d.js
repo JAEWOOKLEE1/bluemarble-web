@@ -163,8 +163,26 @@ const Board3D = (() => {
       g.add(cyl(0.02, 0.01, 0.12, bd, [0, 0.45, -0.5], [-0.8, 0, 0]));
       return g;
     },
+    koala() {
+      const g = new THREE.Group(), gr = '#9ea3a8', wh = '#f2f2f2';
+      // 앉아 있는 통통한 몸통과 하얀 배
+      g.add(sph(0.3, gr, [1, 1.05, 0.9], [0, 0.34, 0]));
+      g.add(sph(0.2, wh, [1, 1.1, 0.6], [0, 0.32, 0.13]));
+      g.add(sph(0.27, gr, [1.08, 0.95, 0.95], [0, 0.82, 0.04]));
+      for (const s of [-1, 1]) {
+        // 크고 복슬복슬한 귀
+        g.add(sph(0.14, gr, [1, 1, 0.55], [s * 0.27, 1.0, 0]));
+        g.add(sph(0.09, wh, [1, 1, 0.4], [s * 0.27, 1.0, 0.05]));
+        g.add(sph(0.03, '#111', null, [s * 0.1, 0.88, 0.27]));
+        g.add(sph(0.08, gr, [0.9, 1.2, 0.9], [s * 0.2, 0.42, 0.2]));
+        g.add(sph(0.09, gr, [1, 0.7, 1.3], [s * 0.15, 0.07, 0.12]));
+      }
+      // 크고 까만 코
+      g.add(sph(0.08, '#2b2b2b', [0.9, 1.25, 0.8], [0, 0.78, 0.29]));
+      return g;
+    },
   };
-  const ANIMAL_SCALE = { kangaroo: 0.4, deer: 0.4, wolf: 0.42, hippo: 0.41 };
+  const ANIMAL_SCALE = { kangaroo: 0.4, deer: 0.4, wolf: 0.42, hippo: 0.41, koala: 0.42 };
 
   function makeToken(kind, color) {
     const g = new THREE.Group();
