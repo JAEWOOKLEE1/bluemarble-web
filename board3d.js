@@ -855,11 +855,15 @@ const Board3D = (() => {
     document.documentElement.style.setProperty('--board-right', `${right}px`);
     return hi;
   }
+  let lift = 0; // 말풍선 자리로 판 위쪽에 비워 둔 높이(px)
   function updateCamera() {
     const dist = fitDistance();
-    placeCamera(dist * cam.zoom);
     const w = canvas.clientWidth, h = canvas.clientHeight;
-    if (fitShift > 0 && cam.zoom >= 1) camera.setViewOffset(w, h, fitShift, 0, w, h);
+    // lift만큼 위를 비우려면 판을 h/(h-lift)배 멀리서 보고, 아래쪽·왼쪽 끝은 제자리에 둠
+    const f = lift > 0.5 ? h / (h - lift) : 1;
+    placeCamera(dist * cam.zoom * f);
+    if (f > 1) camera.setViewOffset(w, h, w / 2 - (w / 2 - fitShift) / f, -(h / 2) * (1 - 1 / f), w, h);
+    else if (fitShift > 0 && cam.zoom >= 1) camera.setViewOffset(w, h, fitShift, 0, w, h);
     else camera.clearViewOffset();
   }
 
@@ -952,23 +956,29 @@ const Board3D = (() => {
       if (tok.moving) continue;
       tok.group.position.y = TOP + (tok.current ? Math.abs(Math.sin(time * 3.2)) * 0.12 : 0);
     }
-    // "선택중……" 말풍선은 말 머리 위를 따라다님
+    // "선택중……" 말풍선은 말 머리 위를 따라다님.
+    // 위쪽 줄 칸이라 말풍선이 화면 위로 잘리면, 판을 아래쪽 기준으로 살짝 줄여 위에 자리를 만듦 (말풍선이 사라지면 원래대로)
+    let liftTarget = 0;
     if (thinking.size) {
       const r = canvas.getBoundingClientRect();
+      const h = r.height;
       for (const [id, el] of thinking) {
         const tok = tokens[id];
         if (!tok) continue;
         const p = tok.group.position.clone().setY(tok.group.position.y + 0.55).project(camera);
-        const x = r.left + (p.x + 1) / 2 * r.width;
-        const y = r.top + (1 - p.y) / 2 * r.height;
-        // 위쪽 줄 칸이라 위로 띄우면 화면 밖으로 나가면 옆으로 띄움 (오른쪽 끝이면 왼쪽으로)
-        const side = y - el.offsetHeight - 16 < 4 ? (x + el.offsetWidth + 30 > innerWidth ? 'left' : 'right') : '';
-        if (el.dataset.side !== side) { el.dataset.side = side; el.className = 'think-bubble' + (side ? ' ' + side : ''); }
-        el.style.left = `${x}px`;
-        el.style.top = `${side ? y + 14 : y}px`;
+        const y = (1 - p.y) / 2 * h;
+        el.style.left = `${r.left + (p.x + 1) / 2 * r.width}px`;
+        el.style.top = `${r.top + y}px`;
         el.style.visibility = 'visible';
+        // 축소하지 않았을 때의 높이로 되돌려서 필요한 여백을 계산
+        const y0 = (y - lift) * h / (h - lift);
+        const need = el.offsetHeight + 22;
+        if (y0 < need) liftTarget = Math.max(liftTarget, (need - y0) / Math.max(0.2, 1 - y0 / h));
       }
+      liftTarget = Math.min(liftTarget, h * 0.2);
     }
+    lift += (liftTarget - lift) * Math.min(1, dt * 8);
+    if (Math.abs(lift - liftTarget) < 0.3) lift = liftTarget;
     const glow = choosing ? 0.25 + 0.2 * Math.sin(time * 6) : 0;
     for (const t of tiles) {
       // 평소엔 흰빛 살짝(글씨 또렷), 반짝일 땐 금빛으로 더 밝게
