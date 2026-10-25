@@ -164,12 +164,16 @@ const Sound = {
       const data = this.clipData[vid] || await (await fetch(this.clipUrl(vid))).arrayBuffer();
       buf = this.clipBuf[vid] = await ctx.decodeAudioData(data.slice(0));
     }
-    if (this._clip) { try { this._clip.stop(); } catch (e) { /* 이미 끝남 */ } }
+    // 앞 대사(예: 황금열쇠)를 끊지 않고 끝난 뒤에 이어서 말함. 너무 오래 밀리면(4초 넘게) 그 대사는 건너뜀
+    const now = ctx.currentTime;
+    const at = Math.max(now, this._clipEnd || 0);
+    if (at - now > 4) return;
     const src = ctx.createBufferSource();
     src.buffer = buf;
     src.connect(ctx.destination);
-    src.start();
-    this._clip = src;
+    src.start(at);
+    // 파일 끝의 무음(약 0.35초)은 겹쳐도 되므로 다음 대사는 조금 일찍 시작
+    this._clipEnd = at + Math.max(0.3, buf.duration - 0.3);
   },
   say(text, vid) {
     if (this.muted || !text) return;
