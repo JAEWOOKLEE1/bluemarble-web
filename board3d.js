@@ -7,7 +7,7 @@ const Board3D = (() => {
   const TOP = 0.1;      // 칸 윗면 높이
   const DIE = 0.62;     // 주사위 한 변
   const WALL = 4.4;     // 주사위가 굴러다니는 안쪽 영역 경계
-  const TILE_GLOW = 0.35; // 칸 그림이 스스로 내는 빛 (글씨 또렷하게)
+  const TILE_GLOW = 0.15; // 칸 그림이 스스로 내는 빛 (너무 크면 하얗게 떠 보임)
   const SLOTS = [[-0.22, -0.12], [0.22, -0.12], [0, -0.32], [0, 0.1]]; // 칸 안 말 위치 (가로, 안쪽방향)
   // 판 가로 늘림 비율: 가로로 긴 화면이면 판도 가로로 넓은 직사각형으로 만들어 화면을 꽉 채움 (init에서 정함)
   let SX = 1;
@@ -934,8 +934,8 @@ const Board3D = (() => {
       raycaster = new THREE.Raycaster();
 
       // 조명은 살짝 낮게: 밝은 배경에서 칸이 하얗게 뜨지 않게
-      scene.add(new THREE.HemisphereLight('#e3ecff', '#2c2c44', 0.7));
-      const sun = new THREE.DirectionalLight('#fff3e0', 0.8);
+      scene.add(new THREE.HemisphereLight('#e3ecff', '#2c2c44', 0.5));
+      const sun = new THREE.DirectionalLight('#fff3e0', 0.6);
       sun.position.set(5, 12, 6);
       sun.castShadow = true;
       sun.shadow.mapSize.set(2048, 2048);
@@ -943,7 +943,7 @@ const Board3D = (() => {
       sun.shadow.bias = -0.0005;
       scene.add(sun);
 
-      const base = new THREE.Mesh(new THREE.BoxGeometry(11 * SX + 0.6, 0.4, 11.6), new THREE.MeshStandardMaterial({ color: '#ffc75a', roughness: 0.55 }));
+      const base = new THREE.Mesh(new THREE.BoxGeometry(11 * SX + 0.6, 0.4, 11.6), new THREE.MeshStandardMaterial({ color: '#141414', roughness: 0.45 }));
       base.position.y = -0.2;
       base.receiveShadow = true;
       scene.add(base);
