@@ -177,16 +177,17 @@ const Board3D = (() => {
   }
 
   // ───────── 건물 ─────────
-  function makeBuilding(level, color) {
+  // type 0 별장, 1 빌딩, 2 호텔
+  function makeBuilding(type, color) {
     const g = new THREE.Group();
-    if (level === 1) {
+    if (type === 0) {
       g.add(box(0.2, 0.15, 0.18, '#fafafa', [0, 0.075, 0]));
       g.add(cone(0.17, 0.13, color, [0, 0.215, 0], [0, Math.PI / 4, 0], 4));
-    } else if (level === 2) {
+    } else if (type === 1) {
       g.add(box(0.22, 0.42, 0.22, '#eceff1', [0, 0.21, 0]));
       g.add(box(0.24, 0.05, 0.24, color, [0, 0.445, 0]));
       for (const y of [0.12, 0.22, 0.32]) g.add(box(0.225, 0.04, 0.16, '#90caf9', [0, y, 0]));
-    } else if (level === 3) {
+    } else {
       g.add(box(0.3, 0.6, 0.26, '#fff8e1', [0, 0.3, 0]));
       g.add(box(0.32, 0.06, 0.28, color, [0, 0.63, 0]));
       for (const y of [0.15, 0.27, 0.39, 0.51]) g.add(box(0.305, 0.045, 0.2, '#ffcc80', [0, y, 0]));
@@ -195,20 +196,34 @@ const Board3D = (() => {
     }
     return g;
   }
-  function setBuilding(idx, level, owner) {
-    if (bldMeshes[idx]) { scene.remove(bldMeshes[idx]); bldMeshes[idx] = null; }
-    if (!level || !owner) return;
-    const t = tiles[idx];
-    const g = makeBuilding(level, owner.color);
-    // 색 띠(안쪽 가장자리) 근처에 세움. 좌우 줄 칸은 가로로 넓으니 그만큼 더 안쪽
-    const off = (Math.abs(t.inward.x) > 0.9 ? 0.47 * SX : 0.47) - 0.18;
-    g.position.copy(t.center).add(t.inward.clone().multiplyScalar(off)).setY(TOP);
-    g.rotation.y = Math.atan2(t.inward.x, t.inward.z);
-    scene.add(g);
-    bldMeshes[idx] = g;
+  const popIn = g => {
     g.scale.setScalar(0.01);
     // easeOutBack: 살짝 튀어오르며 커짐
-    tween(400, k => g.scale.setScalar(Math.max(0.01, 1 + 2.70158 * Math.pow(k - 1, 3) + 1.70158 * Math.pow(k - 1, 2))));
+    tween(400, k => g.scale.setScalar(0.82 * Math.max(0.01, 1 + 2.70158 * Math.pow(k - 1, 3) + 1.70158 * Math.pow(k - 1, 2))));
+  };
+  // 지은 건물을 모두 나란히 세움 (별장 · 빌딩 · 호텔). 새로 생긴 것만 튀어오르는 연출
+  function setBuilding(idx, bld, owner, prevBld) {
+    if (bldMeshes[idx]) { scene.remove(bldMeshes[idx]); bldMeshes[idx] = null; }
+    if (!owner || !bld || !bld.some(Boolean)) return;
+    const t = tiles[idx];
+    const holder = new THREE.Group();
+    // 색 띠(안쪽 가장자리) 근처 한 줄. 좌우 줄 칸은 가로로 넓으니 그만큼 더 안쪽
+    const off = (Math.abs(t.inward.x) > 0.9 ? 0.47 * SX : 0.47) - 0.18;
+    const base = t.center.clone().add(t.inward.clone().multiplyScalar(off)).setY(TOP);
+    const SPOTS = [-0.29, 0, 0.29];
+    // 화면에서 항상 별장 → 빌딩 → 호텔 순 (위·아래 줄은 왼쪽→오른쪽, 좌우 줄은 위→아래)
+    const along = Math.abs(t.inward.z) > 0.9 ? new THREE.Vector3(1, 0, 0) : new THREE.Vector3(0, 0, 1);
+    bld.forEach((b, i) => {
+      if (!b) return;
+      const g = makeBuilding(i, owner.color);
+      g.position.copy(base).add(along.clone().multiplyScalar(SPOTS[i]));
+      g.rotation.y = Math.atan2(t.inward.x, t.inward.z);
+      g.scale.setScalar(0.82);
+      if (!prevBld || !prevBld[i]) popIn(g);
+      holder.add(g);
+    });
+    scene.add(holder);
+    bldMeshes[idx] = holder;
   }
 
   // ───────── 칸 텍스처 ─────────
@@ -943,7 +958,7 @@ const Board3D = (() => {
       sun.shadow.bias = -0.0005;
       scene.add(sun);
 
-      const base = new THREE.Mesh(new THREE.BoxGeometry(11 * SX + 0.6, 0.4, 11.6), new THREE.MeshStandardMaterial({ color: '#141414', roughness: 0.45 }));
+      const base = new THREE.Mesh(new THREE.BoxGeometry(11 * SX + 0.6, 0.4, 11.6), new THREE.MeshStandardMaterial({ color: '#030303', roughness: 1, metalness: 0 })); // 반사광 없는 완전한 검정
       base.position.y = -0.2;
       base.receiveShadow = true;
       scene.add(base);
@@ -1002,13 +1017,19 @@ const Board3D = (() => {
     sync(game) {
       for (const c of game.cells) {
         const owner = c.owner !== null ? game.players[c.owner] : null;
-        const key = `${c.owner}|${c.level}|${owner ? tollOf(c) : ''}`;
+        const bld = c.bld || [false, false, false];
+        const bKey = bld.map(b => (b ? 1 : 0)).join('');
+        const key = `${c.owner}|${bKey}|${owner ? tollOf(c) : ''}`;
         const t = tiles[c.idx];
         if (t.key === key) continue;
-        const levelChanged = !t.key || t.key.split('|')[1] !== String(c.level) || t.key.split('|')[0] !== String(c.owner);
+        const [prevOwner, prevB] = t.key ? t.key.split('|') : [null, null];
         t.key = key;
         drawTile(c.idx, c, owner);
-        if (levelChanged) setBuilding(c.idx, c.level, owner);
+        if (prevB !== bKey || prevOwner !== String(c.owner)) {
+          // 주인이 바뀌면 전부 새로 세우고, 같은 주인이면 새로 지은 것만 튀어오르게
+          const prev = prevOwner === String(c.owner) && prevB ? prevB.split('').map(x => x === '1') : null;
+          setBuilding(c.idx, bld, owner, prev);
+        }
       }
       for (const p of game.players) {
         const tok = tokens[p.id];

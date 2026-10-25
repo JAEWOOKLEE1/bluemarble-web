@@ -2,7 +2,7 @@
 'use strict';
 
 // 게임 버전: 고칠 때마다 올림. 온라인 대전은 같은 버전끼리만 입장 가능
-const GAME_VERSION = '4.3';
+const GAME_VERSION = '4.4';
 // 앱이 인터넷에서 최신 파일을 받아 실행 중인지 (아니면 앱에 들어 있는 버전)
 const IS_ONLINE_BUILD = location.protocol.startsWith('http');
 
@@ -10,13 +10,18 @@ const IS_ONLINE_BUILD = location.protocol.startsWith('http');
 const START_CASH = 300;
 const SALARY = 30;
 const TAX_AMOUNT = 15;
+const SPACE_FEE = 20; // 우주여행 이용료: 컬럼비아호 주인에게 (주인 없으면 은행에)
 const AI_DELAY = 700;
 const SELL_RATE = 0.5;                  // 매각 시 투자액의 50%
-// 땅/별장/빌딩/호텔 통행료 = 땅값 × 비율. 실제 부루마블처럼 건물이 있으면 산 값보다 훨씬 비싸게 받음
-const TOLL_RATE = [0.5, 1.5, 3.5, 6.0];
-const BUILD_RATE = [0.5, 1.0, 1.5];     // 별장/빌딩/호텔 건설비 = 땅값 × 비율
-const LEVEL_NAMES = ['땅', '별장', '빌딩', '호텔'];
-const LEVEL_ICONS = ['', '🏠', '🏢', '🏨'];
+// 건물은 별장·빌딩·호텔을 따로따로 지음 (인덱스 0·1·2). 칸마다 c.bld = [별장?, 빌딩?, 호텔?]
+const BUILD_NAMES = ['별장', '빌딩', '호텔'];
+const BUILD_ICONS = ['🏠', '🏢', '🏨'];
+const BUILD_RATE = [0.5, 1.0, 1.5];     // 건설비 = 땅값 × 비율
+// 통행료 = 땅값 × (땅 0.5 + 지은 건물마다 더하기). 실제 부루마블처럼 건물이 있으면 산 값보다 훨씬 비싸게 받음
+// 예) 별장만 1.5배, 별장+빌딩 3.5배, 셋 다 6배, 호텔만 3배
+const TOLL_LAND = 0.5;
+const TOLL_ADD = [1.0, 2.0, 2.5];
+const NO_BLD = () => [false, false, false];
 const SEAT_COLORS = ['#ff7043', '#2979ff', '#00c853', '#ab47bc'];
 const MAX_SEATS = 4;
 const ANIMALS = {
@@ -96,8 +101,8 @@ const KEY_CARDS = [
   { title: '생일 축하', desc: '생일입니다! 모든 플레이어에게 5만씩 받습니다', act: async p => {
       for (const o of alivePlayers()) if (o !== p) await pay(o, 5, p);
     } },
-  { title: '건물 수리비', desc: '건물 1단계당 3만의 수리비를 냅니다', act: async p => {
-      const cost = propsOf(p).reduce((s, c) => s + c.level, 0) * 3;
+  { title: '건물 수리비', desc: '건물 하나당 3만의 수리비를 냅니다', act: async p => {
+      const cost = propsOf(p).reduce((s, c) => s + bCount(c), 0) * 3;
       if (cost > 0) await pay(p, cost, 'fund'); else log(`${j(p.name, '은/는')} 건물이 없어 수리비를 내지 않습니다`);
     } },
   { title: '서울 여행', desc: '서울로 이동합니다', act: async p => { await moveTo(p, 39); await resolveCell(p); } },
@@ -158,6 +163,12 @@ function sfx(name) {
   Sound[name]();
   if (Net.isHost) Net.broadcast({ t: 'sfx', name });
 }
+// 음성 안내 (온라인이면 모두의 폰에서 읽어줌)
+function voice(text) {
+  if (game.speed === 0) return;
+  Sound.say(text);
+  if (Net.isHost) Net.broadcast({ t: 'say', text });
+}
 // 말이 도착할 칸을 미리 반짝여 보여줌
 function sparkFx(idx) {
   if (game.speed === 0) return Promise.resolve();
@@ -215,40 +226,42 @@ function j(word, pair) {
 function hasMonopoly(ownerId, group) {
   return game.cells.filter(c => c.type === 'city' && c.group === group).every(c => c.owner === ownerId);
 }
+const bldOf = c => c.bld || NO_BLD();
+const bCount = c => bldOf(c).filter(Boolean).length;
+const bIcons = c => bldOf(c).map((b, i) => b ? BUILD_ICONS[i] : '').join('');
+const bNames = c => bldOf(c).map((b, i) => b ? BUILD_NAMES[i] : '').filter(Boolean).join('·');
+// 같은 그룹의 다른 도시를 이 사람이 모두 가졌는지 (이 칸까지 가지면 독점)
+function monoFactor(c, ownerId) {
+  return c.type === 'city' && game.cells.filter(x => x.type === 'city' && x.group === c.group && x !== c)
+    .every(x => x.owner === ownerId) ? 2 : 1;
+}
+// 건물 조합(bld)일 때 통행료
+function tollWith(c, bld, ownerId) {
+  if (c.type === 'tour') return c.toll;
+  // 땅·건물 몫을 각각 반올림해 더함 (구매 창에서 보여주는 합계와 정확히 같게)
+  const sum = Math.round(c.price * TOLL_LAND) + bld.reduce((s, b, i) => s + (b ? Math.round(c.price * TOLL_ADD[i]) : 0), 0);
+  return sum * monoFactor(c, ownerId);
+}
 function tollOf(cell) {
   if (cell.type === 'tour') return cell.toll; // 관광지는 정해진 통행료 (서울 200만 등)
-  let t = Math.round(cell.price * TOLL_RATE[cell.level]);
-  if (cell.owner !== null && hasMonopoly(cell.owner, cell.group)) t *= 2;
-  return t;
+  return tollWith(cell, bldOf(cell), cell.owner);
 }
-function buildCost(cell) { return Math.round(cell.price * BUILD_RATE[cell.level]); }
+function buildCostOf(c, i) { return Math.round(c.price * BUILD_RATE[i]); }
 function investment(cell) {
-  let v = cell.price;
-  for (let l = 0; l < cell.level; l++) v += Math.round(cell.price * BUILD_RATE[l]);
-  return v;
+  return cell.price + bldOf(cell).reduce((s, b, i) => s + (b ? buildCostOf(cell, i) : 0), 0);
 }
 function sellValue(cell) { return Math.floor(investment(cell) * SELL_RATE); }
 function propsOf(p) { return game.cells.filter(c => c.owner === p.id); }
 function assetsOf(p) { return p.cash + propsOf(p).reduce((s, c) => s + investment(c), 0); }
 
-// 바퀴 수에 따라 지을 수 있는 최고 단계: 1바퀴째 별장, 2바퀴째 빌딩, 3바퀴째부터 호텔
+// 바퀴 수에 따라 지을 수 있는 건물: 1바퀴째 별장, 2바퀴째부터 빌딩, 3바퀴째부터 호텔
 function maxLevelFor(p) { return Math.min(3, p.laps + 1); }
-
-// 이번 방문에 고를 수 있는 선택지 (누적 비용). withLand면 땅 구매부터 포함
-function buildOptions(p, c, withLand) {
-  const opts = [];
-  let cum = withLand ? c.price : 0;
-  if (withLand) {
-    if (cum > p.cash) return opts;
-    opts.push({ level: 0, cost: cum });
-  }
-  if (c.type !== 'city') return opts;
-  for (let lv = c.level; lv < maxLevelFor(p); lv++) {
-    cum += Math.round(c.price * BUILD_RATE[lv]);
-    if (cum > p.cash) break;
-    opts.push({ level: lv + 1, cost: cum });
-  }
-  return opts;
+const canBuildType = (p, i) => i < maxLevelFor(p);
+const allowedText = p => BUILD_NAMES.slice(0, maxLevelFor(p)).join('·');
+// 이 칸에 아직 안 지었고 지금 바퀴에 지을 수 있는 건물 종류
+function buildable(p, c) {
+  if (c.type !== 'city') return [];
+  return [0, 1, 2].filter(i => !bldOf(c)[i] && canBuildType(p, i));
 }
 
 // ───────── 로그 / 메시지 / 모달 ─────────
@@ -267,10 +280,47 @@ function setMessage(html, localOnly = false) {
   $('message').innerHTML = html;
 }
 
-function showModal({ title, body, buttons }) {
+// checks가 있으면 켜고 끄는 선택지(예: 별장·빌딩·호텔)를 보여주고 { v: 누른 버튼 값, sel: [켠 것들] }을 돌려줌.
+// summary { baseCost, baseToll, cash }가 있으면 고른 것에 따라 '내는 돈 / 받는 통행료'를 바로 계산해 보여줌
+function showModal({ title, body, buttons, checks, summary }) {
   return new Promise(resolve => {
     $('modal-title').textContent = title;
     $('modal-body').innerHTML = body;
+    const sel = new Set((checks || []).filter(c => c.on).map(c => c.id));
+    let sumEl = null;
+    const buttonEls = [];
+    const refresh = () => {
+      if (!summary) return;
+      const picked = (checks || []).filter(c => sel.has(c.id));
+      const cost = summary.baseCost + picked.reduce((s, c) => s + c.cost, 0);
+      const toll = summary.baseToll + picked.reduce((s, c) => s + c.toll, 0);
+      const over = cost > summary.cash;
+      sumEl.innerHTML = `내는 돈 <b class="minus">-${fmt(cost)}</b> · 상대가 걸리면 <b class="plus">+${fmt(toll)}</b>` +
+        (over ? `<br><span class="minus">현금이 부족해요 (내 현금 ${fmt(summary.cash)})</span>` : '');
+      for (const [el, b] of buttonEls) if (b.needsCash) el.disabled = over;
+    };
+    if (checks && checks.length) {
+      const wrap = document.createElement('div');
+      wrap.className = 'checks';
+      for (const c of checks) {
+        const el = document.createElement('button');
+        el.className = 'check' + (sel.has(c.id) ? ' on' : '');
+        el.innerHTML = `<span class="ck">${sel.has(c.id) ? '✔' : ''}</span><span class="cl">${c.label}</span><span class="cs">${c.sub || ''}</span>`;
+        el.onclick = () => {
+          if (sel.has(c.id)) sel.delete(c.id); else sel.add(c.id);
+          el.classList.toggle('on', sel.has(c.id));
+          el.querySelector('.ck').textContent = sel.has(c.id) ? '✔' : '';
+          refresh();
+        };
+        wrap.appendChild(el);
+      }
+      $('modal-body').appendChild(wrap);
+    }
+    if (summary) {
+      sumEl = document.createElement('div');
+      sumEl.className = 'summary';
+      $('modal-body').appendChild(sumEl);
+    }
     const box = $('modal-buttons');
     box.innerHTML = '';
     for (const b of buttons) {
@@ -284,9 +334,14 @@ function showModal({ title, body, buttons }) {
         el.appendChild(sub);
       }
       if (b.cls) el.className = b.cls;
-      el.onclick = () => { $('modal').classList.add('hidden'); resolve(b.value); };
+      el.onclick = () => {
+        $('modal').classList.add('hidden');
+        resolve(checks ? { v: b.value, sel: [...sel] } : b.value);
+      };
       box.appendChild(el);
+      buttonEls.push([el, b]);
     }
+    refresh();
     $('modal').classList.remove('hidden');
   });
 }
@@ -336,7 +391,7 @@ function renderPanel() {
     const flash = flashes[p.id];
     const chips = propsOf(p).map(c => {
       const g = c.type === 'city' ? GROUPS[c.group].color : '#90a4ae';
-      return `<span class="chip" style="--g:${g}">${c.name}${LEVEL_ICONS[c.level]}</span>`;
+      return `<span class="chip" style="--g:${g}">${c.name}${bIcons(c)}</span>`;
     }).join('') || '<span class="none">보유 땅 없음</span>';
     const status = [`${p.laps + 1}바퀴째`];
     if (p.bankrupt) status.push('💥 파산');
@@ -365,7 +420,7 @@ function snapshot() {
       cash: p.cash, pos: p.pos, laps: p.laps, islandTurns: p.islandTurns, escapeCards: p.escapeCards,
       freePass: p.freePass, spaceTravel: p.spaceTravel, bankrupt: p.bankrupt,
     })),
-    cells: game.cells.map(c => ({ idx: c.idx, type: c.type, name: c.name, short: c.short, icon: c.icon, ticon: c.ticon, group: c.group, price: c.price, toll: c.toll, owner: c.owner, level: c.level })),
+    cells: game.cells.map(c => ({ idx: c.idx, type: c.type, name: c.name, short: c.short, icon: c.icon, ticon: c.ticon, group: c.group, price: c.price, toll: c.toll, owner: c.owner, bld: bldOf(c).slice() })),
     fund: game.fund, round: game.round, maxRounds: game.maxRounds, turn: game.turn,
     currentId: game.current ? game.current.id : null,
     hostId: myPlayer() ? myPlayer().id : null,
@@ -415,10 +470,10 @@ function cellInfoText(c) {
     const owner = c.owner !== null ? game.players[c.owner] : null;
     let s = `<b>${c.name}</b>${c.type === 'city' ? ` (${GROUPS[c.group].name})` : ' (관광지)'} · 땅값 ${fmt(c.price)}`;
     if (owner) {
-      s += ` · 주인 ${owner.name} · ${LEVEL_NAMES[c.level]} · 통행료 ${fmt(tollOf(c))}`;
+      s += ` · 주인 ${owner.name} · ${bCount(c) ? bIcons(c) + ' ' + bNames(c) : '땅만'} · 통행료 ${fmt(tollOf(c))}`;
       if (c.type === 'city' && hasMonopoly(c.owner, c.group)) s += ' (독점 2배)';
     } else if (c.type === 'city') {
-      s += `<br>통행료 땅 ${Math.round(c.price * TOLL_RATE[0])} / 별장 ${Math.round(c.price * TOLL_RATE[1])} / 빌딩 ${Math.round(c.price * TOLL_RATE[2])} / 호텔 ${Math.round(c.price * TOLL_RATE[3])}`;
+      s += `<br>통행료 땅 ${Math.round(c.price * TOLL_LAND)} + 별장 ${Math.round(c.price * TOLL_ADD[0])} + 빌딩 ${Math.round(c.price * TOLL_ADD[1])} + 호텔 ${Math.round(c.price * TOLL_ADD[2])} (지은 것만 더함)`;
     } else {
       s += ` · 통행료 ${fmt(tollOf(c))} (건물 없음)`;
     }
@@ -428,7 +483,7 @@ function cellInfoText(c) {
     start: `지나갈 때마다 월급 ${fmt(SALARY)}`,
     island: '3턴 쉬거나 더블이 나오면 탈출',
     fund: `도착하면 모인 기금 ${fmt(game.fund)}을 가져감`,
-    space: '다음 턴에 원하는 칸으로 이동',
+    space: `다음 턴에 원하는 칸으로 이동 (이용료 ${fmt(SPACE_FEE)} → 컬럼비아호 주인, 없으면 은행)`,
     key: '무작위 카드를 뽑습니다',
     tax: `기금에 ${fmt(TAX_AMOUNT)} 납부`,
   };
@@ -536,7 +591,7 @@ async function pay(p, amount, creditor) {
   return true;
 }
 
-const propName = c => `${c.name}${c.level ? ' ' + LEVEL_ICONS[c.level] + LEVEL_NAMES[c.level] : ''}`;
+const propName = c => `${c.name}${bCount(c) ? ' ' + bIcons(c) + bNames(c) : ''}`;
 
 function sellProperty(p, c) {
   const v = sellValue(c);
@@ -546,7 +601,7 @@ function sellProperty(p, c) {
   toast(`🏷️ <b>${p.name}</b> ${what} 매각 → <b class="plus">+${fmt(v)}</b>`, 'sell');
   tileLabelFx(c.idx, `매각 +${v}만`, '#ffcc80');
   c.owner = null;
-  c.level = 0;
+  c.bld = NO_BLD();
   render();
   moneyFx(`t${c.idx}`, p.id, v);
 }
@@ -591,7 +646,7 @@ function bankrupt(p, creditor) {
     tileLabelFx(c.idx, `매각 +${v}만`, '#ffcc80');
     money += v;
     c.owner = null;
-    c.level = 0;
+    c.bld = NO_BLD();
   }
   const to = creditor === 'fund' ? '사회복지기금' : creditor ? creditor.name : '은행';
   toast(`💥 <b>${p.name}</b> 파산!<br>${sold.length ? '매각: ' + sold.join(', ') + '<br>' : ''}남은 돈 <b>${fmt(money)}</b> → ${to}`, 'bankrupt');
@@ -638,6 +693,7 @@ async function resolveCell(p) {
       break;
     case 'tax':
       log(`💸 ${j(p.name, '이/가')} 사회복지기금에 ${fmt(TAX_AMOUNT)}을 냅니다`);
+      voice(`사회복지기금! ${TAX_AMOUNT}만을 냅니다!`);
       await pay(p, TAX_AMOUNT, 'fund');
       break;
     case 'key':
@@ -651,156 +707,181 @@ async function resolveCell(p) {
   render();
 }
 
-// 출발 칸에 딱 멈추면: 내 도시 한 곳에 건물을 한 단계 더 지을 수 있음 (건설비는 냄, 바퀴 수 제한은 그대로)
+// 출발 칸에 딱 멈추면: 내 도시 한 곳에 건물 하나를 더 지을 수 있음 (건설비는 냄, 바퀴 수 제한은 그대로)
+// 선택지 = (도시, 건물 종류) 짝 중 돈이 되는 것
 function bonusCandidates(p) {
-  return propsOf(p).filter(c => c.type === 'city' && c.level < maxLevelFor(p) && buildCost(c) <= p.cash);
+  const out = [];
+  for (const c of propsOf(p)) {
+    for (const i of buildable(p, c)) if (buildCostOf(c, i) <= p.cash) out.push({ c, i });
+  }
+  return out;
 }
+const tollGain = (c, i, ownerId) => {
+  const b = bldOf(c).slice();
+  b[i] = true;
+  return tollWith(c, b, ownerId) - tollWith(c, bldOf(c), ownerId);
+};
 async function startBonusBuild(p) {
   const cands = bonusCandidates(p);
   if (cands.length === 0) {
-    log(`🏁 ${j(p.name, '이/가')} 출발지에 도착했지만 더 지을 수 있는 땅이 없습니다`);
+    log(`🏁 ${j(p.name, '이/가')} 출발지에 도착했지만 더 지을 수 있는 건물이 없습니다`);
     return;
   }
   let pick = null;
   if (isPerson(p)) {
-    const idx = await askChoice(p, {
+    // 통행료가 많이 오르는 순으로 최대 10개
+    const list = cands.slice().sort((a, b) => tollGain(b.c, b.i, p.id) - tollGain(a.c, a.i, p.id)).slice(0, 10);
+    const key = await askChoice(p, {
       title: '🏁 출발지 보너스 건설!',
-      body: `출발 칸에 딱 멈췄어요! 내 도시 한 곳을 골라 건물을 한 단계 더 지을 수 있어요.<br>내 현금 ${fmt(p.cash)} · ${p.laps + 1}바퀴째라 <b>${LEVEL_NAMES[maxLevelFor(p)]}</b>까지`,
+      body: `출발 칸에 딱 멈췄어요! 내 도시 한 곳에 건물을 하나 더 지을 수 있어요.<br>내 현금 ${fmt(p.cash)} · ${p.laps + 1}바퀴째라 <b>${allowedText(p)}</b>를 지을 수 있어요`,
       buttons: [
-        ...cands.map(c => ({
-          label: `${c.name} → ${LEVEL_ICONS[c.level + 1]} ${LEVEL_NAMES[c.level + 1]}`,
-          sub: `내는 돈 ${fmt(buildCost(c))} · 상대가 걸리면 +${fmt(tollAt(c, c.level + 1, p.id))}`,
-          value: c.idx,
+        ...list.map(({ c, i }) => ({
+          label: `${c.name} + ${BUILD_ICONS[i]} ${BUILD_NAMES[i]}`,
+          sub: `내는 돈 ${fmt(buildCostOf(c, i))} · 통행료 +${fmt(tollGain(c, i, p.id))} 올라감`,
+          value: `${c.idx}:${i}`,
         })),
-        { label: '패스', value: -1, cls: 'secondary' },
+        { label: '패스', value: '', cls: 'secondary' },
       ],
-    }, -1);
-    pick = cands.find(c => c.idx === idx) || null;
+    }, '');
+    pick = cands.find(o => `${o.c.idx}:${o.i}` === key) || null;
   } else {
     await sleep(AI_DELAY);
     // 짓고 나서 통행료가 가장 많이 오르는 곳
-    const gain = c => tollAt(c, c.level + 1, p.id) - tollOf(c);
-    pick = cands.filter(c => AI.wantBuild(game, p, c, buildCost(c))).sort((a, b) => gain(b) - gain(a))[0] || null;
+    pick = cands.filter(o => AI.wantBuild(game, p, o.c, buildCostOf(o.c, o.i)))
+      .sort((a, b) => tollGain(b.c, b.i, p.id) - tollGain(a.c, a.i, p.id))[0] || null;
   }
   if (!pick) {
     log(`🏁 ${j(p.name, '은/는')} 출발지 보너스 건설을 하지 않았습니다`);
     return;
   }
-  const cost = buildCost(pick);
+  const { c, i } = pick;
+  const cost = buildCostOf(c, i);
   p.cash -= cost;
-  pick.level++;
+  c.bld = bldOf(c).slice();
+  c.bld[i] = true;
   render();
-  await sparkFx(pick.idx);
+  await sparkFx(c.idx);
   await moneyFx(p.id, 'bank', cost);
   sfx('build');
-  tileLabelFx(pick.idx, `🎁 ${LEVEL_NAMES[pick.level]}`, '#ffe082');
-  log(`🎁 ${j(p.name, '이/가')} 출발지 보너스로 ${pick.name}에 ${j(LEVEL_NAMES[pick.level], '을/를')} 지었습니다 (${fmt(cost)})`, 'good');
-  toast(`🎁 <b>${p.name}</b> 출발지 보너스: ${pick.name}에 ${LEVEL_ICONS[pick.level]}${LEVEL_NAMES[pick.level]} 건설`, 'sell');
+  tileLabelFx(c.idx, `🎁 ${BUILD_NAMES[i]}`, '#ffe082');
+  log(`🎁 ${j(p.name, '이/가')} 출발지 보너스로 ${c.name}에 ${j(BUILD_NAMES[i], '을/를')} 지었습니다 (${fmt(cost)})`, 'good');
+  toast(`🎁 <b>${p.name}</b> 출발지 보너스: ${c.name}에 ${BUILD_ICONS[i]}${BUILD_NAMES[i]} 건설`, 'sell');
 }
 
-// 이 단계까지 지었을 때 상대가 이 칸에 걸리면 받는 통행료
-function tollAt(c, level, ownerId) {
-  if (c.type === 'tour') return c.toll;
-  const mono = game.cells.filter(x => x.type === 'city' && x.group === c.group && x !== c).every(x => x.owner === ownerId);
-  return Math.round(c.price * TOLL_RATE[level]) * (mono ? 2 : 1);
+// 땅 사기 / 건물 짓기 창: 별장·빌딩·호텔을 원하는 것만 골라 담음 → 선택한 건물 종류 목록을 돌려줌 (null이면 패스)
+async function askBuildChoice(p, c, withLand) {
+  const types = buildable(p, c);
+  const mono = monoFactor(c, p.id);
+  const groupLine = c.type === 'city'
+    ? `<span class="gtag" style="background:${GROUPS[c.group].color}"></span>${GROUPS[c.group].name} 그룹${mono > 1 ? ' · 🌟 독점이라 통행료 2배!' : ''}`
+    : '관광지 (건물 건설 불가)';
+  const lapLine = c.type === 'city'
+    ? `<br>${p.laps + 1}바퀴째라 <b>${allowedText(p)}</b>를 지을 수 있어요. 원하는 것만 골라 담으세요.`
+    : '';
+  const now = withLand ? '' : `<br>지금: ${bCount(c) ? bIcons(c) + ' ' + bNames(c) : '땅만'} · 통행료 ${fmt(tollOf(c))}`;
+  const res = await askChoice(p, {
+    title: withLand ? `${c.name} 구매` : `${c.name} 건물 짓기`,
+    body: `${groupLine}${now}${lapLine}`,
+    checks: types.map(i => ({
+      id: i,
+      label: `${BUILD_ICONS[i]} ${BUILD_NAMES[i]}`,
+      sub: `-${fmt(buildCostOf(c, i))} / 통행료 +${fmt(Math.round(c.price * TOLL_ADD[i]) * mono)}`,
+      cost: buildCostOf(c, i),
+      toll: Math.round(c.price * TOLL_ADD[i]) * mono,
+    })),
+    summary: {
+      baseCost: withLand ? c.price : 0,
+      baseToll: withLand ? tollWith(c, NO_BLD(), p.id) : tollOf(c),
+      cash: p.cash,
+    },
+    buttons: [
+      { label: withLand ? '구매하기' : '짓기', value: 'ok', needsCash: true },
+      { label: '패스', value: 'pass', cls: 'secondary' },
+    ],
+  }, { v: 'pass', sel: [] });
+  if (!res || res.v !== 'ok') return null;
+  // 친구 폰에서 온 답도 검증: 지을 수 있는 종류만, 돈이 넘으면 비싼 것부터 뺌
+  let sel = (Array.isArray(res.sel) ? res.sel : []).map(Number).filter(i => types.includes(i));
+  const total = () => (withLand ? c.price : 0) + sel.reduce((s, i) => s + buildCostOf(c, i), 0);
+  while (sel.length && total() > p.cash) sel = sel.filter(i => i !== Math.max(...sel));
+  if (total() > p.cash) return null;
+  return sel;
 }
-// 구매·건설 버튼: 첫 줄은 무엇을, 둘째 줄은 내는 돈과 받는 돈
-function optionButtons(c, opts, ownerId) {
-  return opts.map(o => ({
-    label: o.level === 0 ? '땅만 사기' : `${LEVEL_ICONS[o.level]} ${LEVEL_NAMES[o.level]}까지`,
-    sub: `내는 돈 ${fmt(o.cost)} · 상대가 걸리면 +${fmt(tollAt(c, o.level, ownerId))}`,
-    value: o.level,
-  }));
+// AI: 돈 여유가 되는 만큼 별장 → 빌딩 → 호텔 순으로 담음
+function aiBuildChoice(p, c, baseCost) {
+  const sel = [];
+  let cost = baseCost;
+  for (const i of buildable(p, c)) {
+    const next = cost + buildCostOf(c, i);
+    if (next <= p.cash && AI.wantBuild(game, p, c, next)) { sel.push(i); cost = next; }
+  }
+  return sel;
 }
-function optionTable(c, opts, ownerId) {
-  const mono = c.type === 'city' && game.cells.filter(x => x.type === 'city' && x.group === c.group && x !== c)
-    .every(x => x.owner === ownerId);
-  return '<table class="opt-table"><tr><th>선택</th><th>내는 돈</th><th>상대가 걸리면 받는 돈</th></tr>' + opts.map(o =>
-    `<tr><td>${o.level === 0 ? '땅' : LEVEL_ICONS[o.level] + ' ' + LEVEL_NAMES[o.level]}</td><td class="minus">-${fmt(o.cost)}</td><td class="plus">+${fmt(tollAt(c, o.level, ownerId))}</td></tr>`
-  ).join('') + '</table>' + (mono ? `<div class="hint">🌟 ${GROUPS[c.group].name} 그룹 독점이라 통행료 2배!</div>` : '');
+function applyBuild(c, sel) {
+  c.bld = bldOf(c).slice();
+  for (const i of sel) c.bld[i] = true;
 }
+const selText = sel => sel.map(i => BUILD_NAMES[i]).join('·');
 
 async function landProperty(p, c) {
   if (c.owner === null) {
-    const opts = buildOptions(p, c, true);
-    if (opts.length === 0) {
+    if (p.cash < c.price) {
       log(`${j(p.name, '은/는')} ${j(c.name, '을/를')} 살 돈이 부족합니다`);
       return;
     }
-    let pick = null;
+    let sel = null;
     if (isPerson(p)) {
-      const groupLine = c.type === 'city'
-        ? `<span class="gtag" style="background:${GROUPS[c.group].color}"></span>${GROUPS[c.group].name} 그룹 · ${p.laps + 1}바퀴째라 <b>${LEVEL_NAMES[maxLevelFor(p)]}</b>까지 지을 수 있어요`
-        : '관광지 (건물 건설 불가)';
-      const lv = await askChoice(p, {
-        title: `${c.name} 구매`,
-        body: `${groupLine}<br>내 현금 ${fmt(p.cash)}${optionTable(c, opts, p.id)}`,
-        buttons: [
-          ...optionButtons(c, opts, p.id),
-          { label: '패스', value: -1, cls: 'secondary' },
-        ],
-      }, -1);
-      pick = opts.find(o => o.level === lv) || null;
+      sel = await askBuildChoice(p, c, true);
     } else {
       await sleep(AI_DELAY);
-      if (AI.wantBuy(game, p, c)) {
-        pick = opts[0];
-        for (const o of opts.slice(1)) if (AI.wantBuild(game, p, c, o.cost)) pick = o;
-      }
+      if (AI.wantBuy(game, p, c)) sel = aiBuildChoice(p, c, c.price);
     }
-    if (!pick) {
+    if (!sel) {
       log(`${j(p.name, '은/는')} ${j(c.name, '을/를')} 사지 않았습니다`);
       return;
     }
-    p.cash -= pick.cost;
+    const cost = c.price + sel.reduce((s, i) => s + buildCostOf(c, i), 0);
+    p.cash -= cost;
     c.owner = p.id;
-    c.level = pick.level;
+    applyBuild(c, sel);
     render();
-    await moneyFx(p.id, 'bank', pick.cost);
-    if (pick.level > 0) {
+    await moneyFx(p.id, 'bank', cost);
+    if (sel.length) {
       sfx('build');
-      log(`🏠 ${j(p.name, '이/가')} ${j(c.name, '을/를')} 구매하고 ${j(LEVEL_NAMES[pick.level], '을/를')} 지었습니다 (${fmt(pick.cost)})`, 'good');
+      log(`🏠 ${j(p.name, '이/가')} ${j(c.name, '을/를')} 구매하고 ${j(selText(sel), '을/를')} 지었습니다 (${fmt(cost)})`, 'good');
     } else {
       sfx('coin');
-      log(`🏠 ${j(p.name, '이/가')} ${j(c.name, '을/를')} 구매했습니다 (${fmt(pick.cost)})`, 'good');
+      log(`🏠 ${j(p.name, '이/가')} ${j(c.name, '을/를')} 구매했습니다 (${fmt(cost)})`, 'good');
     }
     if (c.type === 'city' && hasMonopoly(p.id, c.group)) {
       log(`🌟 ${j(p.name, '이/가')} ${GROUPS[c.group].name} 그룹을 독점했습니다! (통행료 2배)`, 'good');
     }
   } else if (c.owner === p.id) {
-    if (c.type !== 'city' || c.level >= 3) return;
-    if (c.level >= maxLevelFor(p)) {
-      log(`${j(p.name, '은/는')} ${p.laps + 1}바퀴째라 ${c.name}에 더 지을 수 없습니다 (${LEVEL_NAMES[maxLevelFor(p)]}까지)`);
+    if (c.type !== 'city') return;
+    const types = buildable(p, c);
+    if (types.length === 0) {
+      if (bCount(c) < 3) log(`${j(p.name, '은/는')} ${p.laps + 1}바퀴째라 ${c.name}에 더 지을 수 있는 건물이 없습니다 (${allowedText(p)}까지)`);
       return;
     }
-    const opts = buildOptions(p, c, false);
-    if (opts.length === 0) {
-      log(`${j(p.name, '은/는')} ${c.name}에 ${j(LEVEL_NAMES[c.level + 1], '을/를')} 지을 돈이 부족합니다`);
+    if (!types.some(i => buildCostOf(c, i) <= p.cash)) {
+      log(`${j(p.name, '은/는')} ${c.name}에 건물을 지을 돈이 부족합니다`);
       return;
     }
-    let pick = null;
+    let sel = null;
     if (isPerson(p)) {
-      const lv = await askChoice(p, {
-        title: `${c.name} 건설`,
-        body: `지금 ${LEVEL_NAMES[c.level]} · 상대가 걸리면 지금은 <b class="plus">+${fmt(tollOf(c))}</b> · 내 현금 ${fmt(p.cash)}<br>${p.laps + 1}바퀴째라 <b>${LEVEL_NAMES[maxLevelFor(p)]}</b>까지 지을 수 있어요${optionTable(c, opts, p.id)}`,
-        buttons: [
-          ...optionButtons(c, opts, p.id),
-          { label: '패스', value: -1, cls: 'secondary' },
-        ],
-      }, -1);
-      pick = opts.find(o => o.level === lv) || null;
+      sel = await askBuildChoice(p, c, false);
     } else {
       await sleep(AI_DELAY);
-      for (const o of opts) if (AI.wantBuild(game, p, c, o.cost)) pick = o;
+      sel = aiBuildChoice(p, c, 0);
     }
-    if (pick) {
-      p.cash -= pick.cost;
-      c.level = pick.level;
+    if (sel && sel.length) {
+      const cost = sel.reduce((s, i) => s + buildCostOf(c, i), 0);
+      p.cash -= cost;
+      applyBuild(c, sel);
       render();
-      await moneyFx(p.id, 'bank', pick.cost);
-      const name = LEVEL_NAMES[c.level];
+      await moneyFx(p.id, 'bank', cost);
       sfx('build');
-      log(`${LEVEL_ICONS[c.level]} ${j(p.name, '이/가')} ${c.name}에 ${j(name, '을/를')} 건설했습니다 (${fmt(pick.cost)})`, 'good');
+      log(`${sel.map(i => BUILD_ICONS[i]).join('')} ${j(p.name, '이/가')} ${c.name}에 ${j(selText(sel), '을/를')} 건설했습니다 (${fmt(cost)})`, 'good');
     }
   } else {
     const owner = game.players[c.owner];
@@ -831,6 +912,7 @@ async function drawKey(p) {
   const card = game.keyDeck.pop();
   log(`🔑 ${p.name} 황금열쇠 [${card.title}] ${card.desc}`, 'key');
   setMessage(`🔑 ${p.name}: <b>${card.title}</b> — ${card.desc}`);
+  voice(`황금열쇠! ${card.title}! ${card.desc}`);
   if (isPerson(p)) {
     await askChoice(p, { title: `🔑 황금열쇠 · ${card.title}`, body: card.desc, buttons: [{ label: '확인', value: true }] }, true);
   } else {
@@ -850,6 +932,13 @@ async function takeTurn(p) {
   // 우주여행: 원하는 칸으로 이동
   if (p.spaceTravel) {
     p.spaceTravel = false;
+    // 이용료 20만: 컬럼비아호 주인에게, 주인이 없으면 은행에 (주인 본인은 무료)
+    const col = game.cells.find(c => c.name === '컬럼비아호');
+    if (!col || col.owner !== p.id) {
+      const colOwner = col && col.owner !== null ? game.players[col.owner] : null;
+      log(`🚀 ${j(p.name, '이/가')} 우주여행 이용료 ${fmt(SPACE_FEE)}을 ${colOwner ? colOwner.name + '에게' : '은행에'} 냅니다`, 'bad');
+      if (!await pay(p, SPACE_FEE, colOwner)) return;
+    }
     let target;
     if (isPerson(p)) {
       if (p.ctrl === 'remote') setMessage(`🚀 <b>${p.name}</b>이(가) 우주여행 갈 곳을 고르는 중…`);
@@ -916,7 +1005,7 @@ async function takeTurn(p) {
 // ───────── 자동 저장 (혼자 하기) ─────────
 // 폰을 접거나 앱이 강제로 닫혀도 다시 켜면 마지막 턴 시작부터 이어할 수 있게 매 턴 저장
 // v2: 실제 부루마블 판으로 바뀌어서 예전 판의 저장은 쓰지 않음
-const SAVE_KEY = 'bm-save-v2';
+const SAVE_KEY = 'bm-save-v3'; // v3: 건물을 따로따로 짓는 방식으로 바뀜
 function saveGame() {
   if (Net.mode !== 'solo' || game.speed === 0 || game.over) return;
   try {
@@ -1024,7 +1113,7 @@ function showEnd({ reason, rows, winnerId }) {
 
 function initCells() {
   game.cells = BOARD_DEF.map((d, i) => {
-    const c = { idx: i, type: d.type, name: d.name, short: d.short || d.name, icon: d.icon, ticon: d.ticon, owner: null, level: 0 };
+    const c = { idx: i, type: d.type, name: d.name, short: d.short || d.name, icon: d.icon, ticon: d.ticon, owner: null, bld: NO_BLD() };
     if (d.type === 'city') c.group = d.g;
     if (d.type === 'city' || d.type === 'tour') c.price = d.price;
     if (d.type === 'tour') c.toll = d.toll;
@@ -1423,6 +1512,7 @@ function onNetMessage(msg) {
     case 'money': Board3D.moneyFlow(msg.from, msg.to, msg.amount); break;
     case 'dice': Board3D.playRecording(msg.rec); break;
     case 'sfx': if (Sound[msg.name]) Sound[msg.name](); break;
+    case 'say': Sound.say(msg.text); break;
     case 'spark': Board3D.sparkTile(msg.idx, 900); break;
     case 'tlabel': Board3D.tileLabel(msg.idx, msg.text, msg.color); break;
     case 'toast': showToast(msg.html, msg.cls); break;

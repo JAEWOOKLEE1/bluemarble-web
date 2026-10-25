@@ -130,6 +130,23 @@ const Sound = {
     [1568, 1976, 2349, 3136].forEach((f, i) => this.tone(f, i * 0.06, 0.25, 0.06, 'sine'));
   },
 
+  // 음성 안내: 앱에서는 안드로이드 음성(높고 밝은 톤), 브라우저에서는 웹 음성으로 읽어줌
+  say(text) {
+    if (this.muted || !text) return;
+    const t = String(text).replace(/<[^>]*>/g, '').replace(/(\d+)만/g, '$1만 원');
+    try {
+      if (window.AndroidTTS) { window.AndroidTTS.speak(t); return; }
+    } catch (e) { /* 앱 음성 없음 */ }
+    if (window.speechSynthesis && window.SpeechSynthesisUtterance) {
+      const u = new SpeechSynthesisUtterance(t);
+      u.lang = 'ko-KR';
+      u.pitch = 1.6;
+      u.rate = 1.05;
+      speechSynthesis.cancel();
+      speechSynthesis.speak(u);
+    }
+  },
+
   // 땅 구매 완료: 부드러운 '띵동'
   coin() {
     if (this.muted || !this.ensure()) return;

@@ -61,7 +61,7 @@ const AI = {
   wantUseEscape(game, p) {
     const danger = game.cells
       .filter(c => c.owner !== null && c.owner !== p.id)
-      .reduce((s, c) => s + c.level, 0);
+      .reduce((s, c) => s + bCount(c), 0);
     return danger < this.profiles[p.profile].escapeDanger;
   },
 
@@ -88,8 +88,9 @@ const AI = {
         if (c.owner === null) {
           s = this.wantBuy(game, p, c) ? 30 + this.groupDesire(game, p, c) * 50 : -5;
         } else if (c.owner === p.id) {
-          if (c.type === 'city' && c.level < maxLevelFor(p) && this.wantBuild(game, p, c, buildCost(c))) {
-            s = 25 + c.level * 10 + (hasMonopoly(p.id, c.group) ? 20 : 0);
+          const can = buildable(p, c);
+          if (can.length && this.wantBuild(game, p, c, Math.min(...can.map(i => buildCostOf(c, i))))) {
+            s = 25 + bCount(c) * 10 + (hasMonopoly(p.id, c.group) ? 20 : 0);
           }
         } else {
           s = -tollOf(c);
