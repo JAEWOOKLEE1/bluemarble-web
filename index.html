@@ -14,6 +14,10 @@
     <div class="stage">
       <div class="canvas-wrap">
         <canvas id="scene"></canvas>
+      </div>
+      <!-- 가로 화면에서는 오른쪽 끝 좁은 열, 그 밖에서는 판 위·아래에 그대로 배치 -->
+      <div class="rcol">
+        <div class="mini-players" id="mini-players"></div>
         <div class="hud-top">
           <span class="chip-info" id="round-info">-</span>
           <span class="chip-info" id="fund-info"></span>
@@ -21,13 +25,12 @@
           <button id="sound-btn" class="icon-btn" title="소리">🔊</button>
         </div>
         <div class="toasts" id="toasts"></div>
+        <div class="cell-info" id="cell-info">칸을 누르면 정보가 보여요 · 드래그로 회전, 두 손가락으로 확대</div>
+        <div class="hud">
+          <div class="message" id="message"></div>
+          <button id="roll-btn" disabled>🎲 던지기</button>
+        </div>
       </div>
-      <div class="mini-players" id="mini-players"></div>
-      <div class="hud">
-        <div class="message" id="message"></div>
-        <button id="roll-btn" disabled>🎲 던지기</button>
-      </div>
-      <div class="cell-info" id="cell-info">칸을 누르면 정보가 보여요 · 드래그로 회전, 두 손가락으로 확대</div>
     </div>
 
     <aside class="side">

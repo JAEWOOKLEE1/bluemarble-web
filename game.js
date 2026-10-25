@@ -2,7 +2,7 @@
 'use strict';
 
 // 게임 버전: 고칠 때마다 올림. 온라인 대전은 같은 버전끼리만 입장 가능
-const GAME_VERSION = '3.6';
+const GAME_VERSION = '3.7';
 // 앱이 인터넷에서 최신 파일을 받아 실행 중인지 (아니면 앱에 들어 있는 버전)
 const IS_ONLINE_BUILD = location.protocol.startsWith('http');
 
@@ -88,7 +88,7 @@ const KEY_CARDS = [
   { title: '병원비', desc: '병원비 15만을 사회복지기금에 냅니다', act: async p => { await pay(p, 15, 'fund'); } },
   { title: '무인도 탈출권', desc: '무인도에서 바로 나올 수 있는 탈출권을 받습니다', act: async p => { p.escapeCards++; } },
   { title: '무인도 표류', desc: '배가 난파되어 무인도로 갑니다 (월급 없음)', act: async p => { sendToIsland(p); } },
-  { title: '출발지로', desc: '출발지로 이동해 월급을 받습니다', act: async p => { await moveTo(p, 0); } },
+  { title: '출발지로', desc: '출발지로 이동해 월급을 받습니다', act: async p => { await moveTo(p, 0); await resolveCell(p); } },
   { title: '뒤로 3칸', desc: '뒤로 3칸 이동합니다', act: async p => { await moveBackward(p, 3); await resolveCell(p); } },
   { title: '우주여행 초대', desc: '우주여행 칸으로 이동합니다', act: async p => { await moveTo(p, 30); await resolveCell(p); } },
   { title: '기금 수령처로', desc: '사회복지기금 칸으로 이동합니다', act: async p => { await moveTo(p, 20); await resolveCell(p); } },
@@ -611,6 +611,9 @@ function bankrupt(p, creditor) {
 async function resolveCell(p) {
   const c = game.cells[p.pos];
   switch (c.type) {
+    case 'start':
+      await startBonusBuild(p);
+      break;
     case 'island':
       p.islandTurns = 3;
       sfx('bad');
@@ -645,6 +648,53 @@ async function resolveCell(p) {
       break;
   }
   render();
+}
+
+// 출발 칸에 딱 멈추면: 내 도시 한 곳에 건물을 한 단계 더 지을 수 있음 (건설비는 냄, 바퀴 수 제한은 그대로)
+function bonusCandidates(p) {
+  return propsOf(p).filter(c => c.type === 'city' && c.level < maxLevelFor(p) && buildCost(c) <= p.cash);
+}
+async function startBonusBuild(p) {
+  const cands = bonusCandidates(p);
+  if (cands.length === 0) {
+    log(`🏁 ${j(p.name, '이/가')} 출발지에 도착했지만 더 지을 수 있는 땅이 없습니다`);
+    return;
+  }
+  let pick = null;
+  if (isPerson(p)) {
+    const idx = await askChoice(p, {
+      title: '🏁 출발지 보너스 건설!',
+      body: `출발 칸에 딱 멈췄어요! 내 도시 한 곳을 골라 건물을 한 단계 더 지을 수 있어요.<br>내 현금 ${fmt(p.cash)} · ${p.laps + 1}바퀴째라 <b>${LEVEL_NAMES[maxLevelFor(p)]}</b>까지`,
+      buttons: [
+        ...cands.map(c => ({
+          label: `${c.name} → ${LEVEL_ICONS[c.level + 1]} ${LEVEL_NAMES[c.level + 1]}`,
+          sub: `내는 돈 ${fmt(buildCost(c))} · 상대가 걸리면 +${fmt(tollAt(c, c.level + 1, p.id))}`,
+          value: c.idx,
+        })),
+        { label: '패스', value: -1, cls: 'secondary' },
+      ],
+    }, -1);
+    pick = cands.find(c => c.idx === idx) || null;
+  } else {
+    await sleep(AI_DELAY);
+    // 짓고 나서 통행료가 가장 많이 오르는 곳
+    const gain = c => tollAt(c, c.level + 1, p.id) - tollOf(c);
+    pick = cands.filter(c => AI.wantBuild(game, p, c, buildCost(c))).sort((a, b) => gain(b) - gain(a))[0] || null;
+  }
+  if (!pick) {
+    log(`🏁 ${j(p.name, '은/는')} 출발지 보너스 건설을 하지 않았습니다`);
+    return;
+  }
+  const cost = buildCost(pick);
+  p.cash -= cost;
+  pick.level++;
+  render();
+  await sparkFx(pick.idx);
+  await moneyFx(p.id, 'bank', cost);
+  sfx('build');
+  tileLabelFx(pick.idx, `🎁 ${LEVEL_NAMES[pick.level]}`, '#ffe082');
+  log(`🎁 ${j(p.name, '이/가')} 출발지 보너스로 ${pick.name}에 ${j(LEVEL_NAMES[pick.level], '을/를')} 지었습니다 (${fmt(cost)})`, 'good');
+  toast(`🎁 <b>${p.name}</b> 출발지 보너스: ${pick.name}에 ${LEVEL_ICONS[pick.level]}${LEVEL_NAMES[pick.level]} 건설`, 'sell');
 }
 
 // 이 단계까지 지었을 때 상대가 이 칸에 걸리면 받는 통행료

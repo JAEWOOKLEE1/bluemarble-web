@@ -91,7 +91,7 @@ const AI = {
         }
       } else if (c.type === 'fund') s = game.fund;
       else if (c.type === 'key') s = 8;
-      else if (c.type === 'start') s = 5;
+      else if (c.type === 'start') s = bonusCandidates(p).length ? 35 : 5; // 출발지 보너스 건설
       else if (c.type === 'island') s = -40;
       else if (c.type === 'tax') s = -15;
       s += Math.random() * 3;

@@ -703,6 +703,8 @@ const Board3D = (() => {
   }
 
   let userTilted = false; // 사용자가 직접 기울기를 바꿨으면 자동 조정 안 함
+  // 가로 화면 카메라 기울기: 낮을수록 판이 옆으로 넓게 펼쳐져 가로 공간을 더 씀
+  const LANDSCAPE_EL = 0.78;
   function resize() {
     const w = canvas.clientWidth, h = canvas.clientHeight;
     if (!w || !h) return;
@@ -710,7 +712,7 @@ const Board3D = (() => {
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
     // 가로로 넓은 화면에서는 조금 더 위에서 내려다봐서 판이 화면 높이를 꽉 채우게
-    if (!userTilted) cam.el = camera.aspect > 1.2 ? 1.3 : 0.98;
+    if (!userTilted) cam.el = camera.aspect > 1.2 ? LANDSCAPE_EL : 0.98;
   }
 
   function setupInput() {
