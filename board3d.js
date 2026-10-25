@@ -7,6 +7,7 @@ const Board3D = (() => {
   const TOP = 0.1;      // 칸 윗면 높이
   const DIE = 0.62;     // 주사위 한 변
   const WALL = 4.4;     // 주사위가 굴러다니는 안쪽 영역 경계
+  const TILE_GLOW = 0.35; // 칸 그림이 스스로 내는 빛 (글씨 또렷하게)
   const SLOTS = [[-0.22, -0.12], [0.22, -0.12], [0, -0.32], [0, 0.1]]; // 칸 안 말 위치 (가로, 안쪽방향)
   // 판 가로 늘림 비율: 가로로 긴 화면이면 판도 가로로 넓은 직사각형으로 만들어 화면을 꽉 채움 (init에서 정함)
   let SX = 1;
@@ -244,20 +245,30 @@ const Board3D = (() => {
     const fit = (text, size, weight, maxW) => {
       do { ctx.font = `${weight} ${size}px ${FONT}`; size -= 2; } while (ctx.measureText(text).width > maxW && size > 18);
     };
-    ctx.fillStyle = '#1d2433';
+    // 진한 글씨 + 흰 테두리(후광): 밝은 화면이나 소유자 색 위에서도 또렷하게
+    const draw = (text, x, y, color) => {
+      ctx.lineJoin = 'round';
+      ctx.lineWidth = 8;
+      ctx.strokeStyle = 'rgba(255,255,255,.95)';
+      ctx.strokeText(text, x, y);
+      ctx.fillStyle = color;
+      ctx.fillText(text, x, y);
+    };
+    const INK = '#141022';
     if (cell.icon) {
-      ctx.font = `92px ${FONT}`;
-      ctx.fillText(cell.icon, cx, cy - 28);
-      fit(cell.short, 42, 'bold', box.w - 24);
-      ctx.fillText(cell.short, cx, cy + 62);
+      ctx.font = `86px ${FONT}`;
+      ctx.fillText(cell.icon, cx, cy - 30);
+      fit(cell.short, 50, '900', box.w - 20);
+      draw(cell.short, cx, cy + 60, INK);
     } else {
-      if (cell.type === 'tour') { ctx.font = `46px ${FONT}`; ctx.fillText(cell.ticon || '✈️', cx, cy - 52); }
-      fit(cell.short, 50, 'bold', box.w - 26);
-      ctx.fillText(cell.short, cx, cy - (cell.type === 'tour' ? 0 : 20));
+      const tour = cell.type === 'tour';
+      if (tour) { ctx.font = `40px ${FONT}`; ctx.fillText(cell.ticon || '✈️', cx, cy - 64); }
+      fit(cell.short, 64, '900', box.w - 18);
+      draw(cell.short, cx, cy - (tour ? 10 : 26), INK);
+      // 가격(주인 없음)은 진한 갈색, 통행료(주인 있음)는 진한 빨강
       const sub = owner ? `통행료 ${tollOf(cell)}만` : `${cell.price}만`;
-      ctx.fillStyle = owner ? '#1d2433' : '#5b6170';
-      fit(sub, 36, owner ? 'bold' : '600', box.w - 26);
-      ctx.fillText(sub, cx, cy + (cell.type === 'tour' ? 48 : 34));
+      fit(sub, 50, '900', box.w - 18);
+      draw(sub, cx, cy + (tour ? 46 : 38), owner ? '#b0001a' : '#6b2c00');
     }
     t.tex.needsUpdate = true;
   }
@@ -892,7 +903,13 @@ const Board3D = (() => {
       tok.group.position.y = TOP + (tok.current ? Math.abs(Math.sin(time * 3.2)) * 0.12 : 0);
     }
     const glow = choosing ? 0.25 + 0.2 * Math.sin(time * 6) : 0;
-    for (const t of tiles) t.top.material.emissiveIntensity = Math.max(t.space ? 0 : glow, t.flash || 0);
+    for (const t of tiles) {
+      // 평소엔 흰빛 살짝(글씨 또렷), 반짝일 땐 금빛으로 더 밝게
+      const g = Math.max(t.space ? 0 : glow, t.flash || 0);
+      const m = t.top.material;
+      m.emissiveIntensity = TILE_GLOW + g;
+      m.emissive.setHex(g > 0.01 ? 0xffe27a : 0xffffff);
+    }
     updateCamera();
     renderer.render(scene, camera);
   }
@@ -916,8 +933,9 @@ const Board3D = (() => {
       clock = new THREE.Clock();
       raycaster = new THREE.Raycaster();
 
-      scene.add(new THREE.HemisphereLight('#e3ecff', '#2c2c44', 0.85));
-      const sun = new THREE.DirectionalLight('#fff3e0', 0.95);
+      // 조명은 살짝 낮게: 밝은 배경에서 칸이 하얗게 뜨지 않게
+      scene.add(new THREE.HemisphereLight('#e3ecff', '#2c2c44', 0.7));
+      const sun = new THREE.DirectionalLight('#fff3e0', 0.8);
       sun.position.set(5, 12, 6);
       sun.castShadow = true;
       sun.shadow.mapSize.set(2048, 2048);
@@ -950,7 +968,8 @@ const Board3D = (() => {
         tex.encoding = THREE.sRGBEncoding;
         tex.anisotropy = aniso;
         const top = new THREE.Mesh(new THREE.PlaneGeometry(0.94 * SX, 0.94),
-          new THREE.MeshStandardMaterial({ map: tex, roughness: 0.85, emissive: new THREE.Color('#ffd54f'), emissiveIntensity: 0 }));
+          // 칸 그림을 스스로 조금 비추게(emissiveMap) → 조명에 덜 휘둘리고 글씨가 원래 색 그대로 또렷
+          new THREE.MeshStandardMaterial({ map: tex, roughness: 0.9, emissive: new THREE.Color('#ffffff'), emissiveMap: tex, emissiveIntensity: TILE_GLOW }));
         top.rotation.x = -Math.PI / 2;
         top.position.copy(f.center).setY(TOP + 0.001);
         top.receiveShadow = true;

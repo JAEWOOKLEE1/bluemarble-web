@@ -2,7 +2,7 @@
 'use strict';
 
 // 게임 버전: 고칠 때마다 올림. 온라인 대전은 같은 버전끼리만 입장 가능
-const GAME_VERSION = '4.1';
+const GAME_VERSION = '4.2';
 // 앱이 인터넷에서 최신 파일을 받아 실행 중인지 (아니면 앱에 들어 있는 버전)
 const IS_ONLINE_BUILD = location.protocol.startsWith('http');
 
@@ -12,7 +12,8 @@ const SALARY = 30;
 const TAX_AMOUNT = 15;
 const AI_DELAY = 700;
 const SELL_RATE = 0.5;                  // 매각 시 투자액의 50%
-const TOLL_RATE = [0.3, 1.2, 2.8, 5.0]; // 땅/별장/빌딩/호텔 통행료 = 땅값 × 비율
+// 땅/별장/빌딩/호텔 통행료 = 땅값 × 비율. 실제 부루마블처럼 건물이 있으면 산 값보다 훨씬 비싸게 받음
+const TOLL_RATE = [0.5, 1.5, 3.5, 6.0];
 const BUILD_RATE = [0.5, 1.0, 1.5];     // 별장/빌딩/호텔 건설비 = 땅값 × 비율
 const LEVEL_NAMES = ['땅', '별장', '빌딩', '호텔'];
 const LEVEL_ICONS = ['', '🏠', '🏢', '🏨'];
@@ -43,7 +44,7 @@ const BOARD_DEF = [
   { type: 'key', name: '황금열쇠', icon: '🔑' },
   { type: 'city', name: '베이징', g: 0, price: 8 },
   { type: 'city', name: '마닐라', g: 0, price: 8 },
-  { type: 'tour', name: '제주도', price: 20, ticon: '🏝️' },
+  { type: 'tour', name: '제주도', price: 20, toll: 30, ticon: '🏝️' },
   { type: 'city', name: '싱가포르', g: 1, price: 10 },
   { type: 'key', name: '황금열쇠', icon: '🔑' },
   { type: 'city', name: '카이로', g: 1, price: 10 },
@@ -53,7 +54,7 @@ const BOARD_DEF = [
   { type: 'key', name: '황금열쇠', icon: '🔑' },
   { type: 'city', name: '코펜하겐', g: 2, price: 16 },
   { type: 'city', name: '스톡홀름', g: 2, price: 16 },
-  { type: 'tour', name: '콩코드 여객기', short: '콩코드', price: 20, ticon: '✈️' },
+  { type: 'tour', name: '콩코드 여객기', short: '콩코드', price: 20, toll: 30, ticon: '✈️' },
   { type: 'city', name: '베른', g: 3, price: 18 },
   { type: 'key', name: '황금열쇠', icon: '🔑' },
   { type: 'city', name: '베를린', g: 3, price: 18 },
@@ -63,21 +64,21 @@ const BOARD_DEF = [
   { type: 'key', name: '황금열쇠', icon: '🔑' },
   { type: 'city', name: '상파울루', g: 4, price: 24 },
   { type: 'city', name: '시드니', g: 4, price: 24 },
-  { type: 'tour', name: '부산', price: 50, ticon: '⚓' },
+  { type: 'tour', name: '부산', price: 50, toll: 75, ticon: '⚓' },
   { type: 'city', name: '하와이', g: 5, price: 26 },
   { type: 'city', name: '리스본', g: 5, price: 26 },
-  { type: 'tour', name: '퀸엘리자베스호', short: '퀸엘리자베스', price: 30, ticon: '🚢' },
+  { type: 'tour', name: '퀸엘리자베스호', short: '퀸엘리자베스', price: 30, toll: 45, ticon: '🚢' },
   { type: 'city', name: '마드리드', g: 5, price: 28 },
   { type: 'space', name: '우주여행', icon: '🚀' },
   { type: 'city', name: '도쿄', g: 6, price: 30 },
-  { type: 'tour', name: '컬럼비아호', price: 45, ticon: '🛰️' },
+  { type: 'tour', name: '컬럼비아호', price: 45, toll: 70, ticon: '🛰️' },
   { type: 'city', name: '파리', g: 6, price: 32 },
   { type: 'city', name: '로마', g: 6, price: 32 },
   { type: 'key', name: '황금열쇠', icon: '🔑' },
   { type: 'city', name: '런던', g: 7, price: 35 },
   { type: 'city', name: '뉴욕', g: 7, price: 35 },
   { type: 'tax', name: '사회복지기금 접수처', short: '기금납부', icon: '💸' },
-  { type: 'tour', name: '서울', price: 100, ticon: '🏯' },
+  { type: 'tour', name: '서울', price: 100, toll: 200, ticon: '🏯' },
 ];
 
 // ───────── 황금열쇠 카드 ─────────
@@ -215,7 +216,7 @@ function hasMonopoly(ownerId, group) {
   return game.cells.filter(c => c.type === 'city' && c.group === group).every(c => c.owner === ownerId);
 }
 function tollOf(cell) {
-  if (cell.type === 'tour') return Math.round(cell.price * 0.5);
+  if (cell.type === 'tour') return cell.toll; // 관광지는 정해진 통행료 (서울 200만 등)
   let t = Math.round(cell.price * TOLL_RATE[cell.level]);
   if (cell.owner !== null && hasMonopoly(cell.owner, cell.group)) t *= 2;
   return t;
@@ -364,7 +365,7 @@ function snapshot() {
       cash: p.cash, pos: p.pos, laps: p.laps, islandTurns: p.islandTurns, escapeCards: p.escapeCards,
       freePass: p.freePass, spaceTravel: p.spaceTravel, bankrupt: p.bankrupt,
     })),
-    cells: game.cells.map(c => ({ idx: c.idx, type: c.type, name: c.name, short: c.short, icon: c.icon, ticon: c.ticon, group: c.group, price: c.price, owner: c.owner, level: c.level })),
+    cells: game.cells.map(c => ({ idx: c.idx, type: c.type, name: c.name, short: c.short, icon: c.icon, ticon: c.ticon, group: c.group, price: c.price, toll: c.toll, owner: c.owner, level: c.level })),
     fund: game.fund, round: game.round, maxRounds: game.maxRounds, turn: game.turn,
     currentId: game.current ? game.current.id : null,
     hostId: myPlayer() ? myPlayer().id : null,
@@ -699,7 +700,7 @@ async function startBonusBuild(p) {
 
 // 이 단계까지 지었을 때 상대가 이 칸에 걸리면 받는 통행료
 function tollAt(c, level, ownerId) {
-  if (c.type === 'tour') return Math.round(c.price * 0.5);
+  if (c.type === 'tour') return c.toll;
   const mono = game.cells.filter(x => x.type === 'city' && x.group === c.group && x !== c).every(x => x.owner === ownerId);
   return Math.round(c.price * TOLL_RATE[level]) * (mono ? 2 : 1);
 }
@@ -1026,6 +1027,7 @@ function initCells() {
     const c = { idx: i, type: d.type, name: d.name, short: d.short || d.name, icon: d.icon, ticon: d.ticon, owner: null, level: 0 };
     if (d.type === 'city') c.group = d.g;
     if (d.type === 'city' || d.type === 'tour') c.price = d.price;
+    if (d.type === 'tour') c.toll = d.toll;
     return c;
   });
 }
