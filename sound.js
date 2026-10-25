@@ -131,12 +131,26 @@ const Sound = {
   },
 
   // 음성 안내: 앱에서는 안드로이드 음성(높고 밝은 톤), 브라우저에서는 웹 음성으로 읽어줌
-  // 목소리 높이·속도 (너무 높이면 소리가 갈라져 쉰 목소리가 됨 → 살짝만 높게)
+  // 목소리 높이·속도 (너무 높이면 소리가 갈라져 쉰 목소리가 됨). 1.25배가 가장 좋다는 의견
   VOICE_PITCH: 1.25,
   VOICE_RATE: 1.05,
-  say(text) {
+  // 녹음된 대사 파일 목록 (voice/list.json). 여기 있는 대사는 사람 목소리 파일로 틈
+  clips: [],
+  loadClips() {
+    fetch('voice/list.json', { cache: 'no-store' })
+      .then(r => (r.ok ? r.json() : []))
+      .then(list => { this.clips = Array.isArray(list) ? list : []; })
+      .catch(() => {});
+  },
+  say(text, vid) {
     if (this.muted || !text) return;
-    const t = String(text).replace(/<[^>]*>/g, '').replace(/(\d+)만/g, '$1만 원');
+    if (vid && this.clips.includes(vid)) {
+      if (this._clip) this._clip.pause();
+      this._clip = new Audio(`voice/${vid}.mp3`);
+      this._clip.play().catch(() => {});
+      return;
+    }
+    const t = String(text).replace(/<[^>]*>/g, '').replace(/(\d+)만(?! 원)/g, '$1만 원');
     try {
       if (window.AndroidTTS) {
         if (!this._voiceSet && window.AndroidTTS.config) {

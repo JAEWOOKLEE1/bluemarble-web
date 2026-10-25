@@ -2,7 +2,7 @@
 'use strict';
 
 // 게임 버전: 고칠 때마다 올림. 온라인 대전은 같은 버전끼리만 입장 가능
-const GAME_VERSION = '4.5';
+const GAME_VERSION = '4.6';
 // 앱이 인터넷에서 최신 파일을 받아 실행 중인지 (아니면 앱에 들어 있는 버전)
 const IS_ONLINE_BUILD = location.protocol.startsWith('http');
 
@@ -163,12 +163,35 @@ function sfx(name) {
   Sound[name]();
   if (Net.isHost) Net.broadcast({ t: 'sfx', name });
 }
-// 음성 안내 (온라인이면 모두의 폰에서 읽어줌)
-function voice(text) {
+// 음성 안내 (온라인이면 모두의 폰에서). vid에 해당하는 녹음 파일(voice/vid.mp3)이 있으면 그걸 틀고, 없으면 기계 음성으로 읽음
+function voice(text, vid) {
   if (game.speed === 0) return;
-  Sound.say(text);
-  if (Net.isHost) Net.broadcast({ t: 'say', text });
+  Sound.say(text, vid);
+  if (Net.isHost) Net.broadcast({ t: 'say', text, vid });
 }
+// 황금열쇠 카드의 녹음 파일 이름: 카드 순서대로 key01 ~ key17
+const keyVid = card => 'key' + String(KEY_CARDS.indexOf(card) + 1).padStart(2, '0');
+// 읽어줄 대사: 느낌표로 끊지 않고 사람이 말하듯 이어지는 '~요' 말투 (기계 음성이 덜 딱딱하게 들림)
+const SPEECH = {
+  '복권 당첨': '황금열쇠예요! 복권에 당첨돼서 20만 원을 받아요!',
+  '장학금': '황금열쇠예요! 장학금으로 10만 원을 받아요!',
+  '과속 벌금': '황금열쇠예요. 앗, 과속 벌금으로 10만 원을 내야 해요.',
+  '병원비': '황금열쇠예요. 병원비로 15만 원을 내요.',
+  '무인도 탈출권': '황금열쇠예요! 무인도 탈출권을 받았어요!',
+  '무인도 표류': '황금열쇠예요. 배가 난파돼서 무인도로 떠내려가요.',
+  '출발지로': '황금열쇠예요! 출발지로 가서 월급을 받아요!',
+  '뒤로 3칸': '황금열쇠예요. 뒤로 세 칸 이동해요.',
+  '우주여행 초대': '황금열쇠예요! 우주여행에 초대받았어요!',
+  '기금 수령처로': '황금열쇠예요! 사회복지기금 칸으로 이동해요!',
+  '생일 축하': '황금열쇠예요! 생일 축하해요! 모두에게 5만 원씩 받아요!',
+  '건물 수리비': '황금열쇠예요. 건물 하나에 3만 원씩 수리비를 내요.',
+  '서울 여행': '황금열쇠예요! 서울로 여행을 떠나요!',
+  '제주도 관광': '황금열쇠예요! 제주도로 관광을 떠나요!',
+  '종합소득세': '황금열쇠예요. 종합소득세로 현금의 10퍼센트를 내요.',
+  '통행료 면제권': '황금열쇠예요! 통행료 면제권을 받았어요!',
+  '해외 유학': '황금열쇠예요. 해외 유학비로 20만 원을 내요.',
+};
+const TAX_SPEECH = `사회복지기금에 ${TAX_AMOUNT}만 원을 내요!`;
 // 말이 도착할 칸을 미리 반짝여 보여줌
 function sparkFx(idx) {
   if (game.speed === 0) return Promise.resolve();
@@ -693,7 +716,7 @@ async function resolveCell(p) {
       break;
     case 'tax':
       log(`💸 ${j(p.name, '이/가')} 사회복지기금에 ${fmt(TAX_AMOUNT)}을 냅니다`);
-      voice(`사회복지기금! ${TAX_AMOUNT}만을 냅니다!`);
+      voice(TAX_SPEECH, 'tax');
       await pay(p, TAX_AMOUNT, 'fund');
       break;
     case 'key':
@@ -912,7 +935,7 @@ async function drawKey(p) {
   const card = game.keyDeck.pop();
   log(`🔑 ${p.name} 황금열쇠 [${card.title}] ${card.desc}`, 'key');
   setMessage(`🔑 ${p.name}: <b>${card.title}</b> — ${card.desc}`);
-  voice(`황금열쇠! ${card.title}! ${card.desc}`);
+  voice(SPEECH[card.title] || `황금열쇠예요! ${card.desc}`, keyVid(card));
   if (isPerson(p)) {
     await askChoice(p, { title: `🔑 황금열쇠 · ${card.title}`, body: card.desc, buttons: [{ label: '확인', value: true }] }, true);
   } else {
@@ -1512,7 +1535,7 @@ function onNetMessage(msg) {
     case 'money': Board3D.moneyFlow(msg.from, msg.to, msg.amount); break;
     case 'dice': Board3D.playRecording(msg.rec); break;
     case 'sfx': if (Sound[msg.name]) Sound[msg.name](); break;
-    case 'say': Sound.say(msg.text); break;
+    case 'say': Sound.say(msg.text, msg.vid); break;
     case 'spark': Board3D.sparkTile(msg.idx, 900); break;
     case 'tlabel': Board3D.tileLabel(msg.idx, msg.text, msg.color); break;
     case 'toast': showToast(msg.html, msg.cls); break;
@@ -1545,6 +1568,7 @@ window.addEventListener('DOMContentLoaded', async () => {
     $('sound-btn').textContent = Sound.muted ? '🔇' : '🔊';
   };
   document.addEventListener('pointerdown', () => Sound.ensure(), { once: true });
+  Sound.loadClips();
   // 가로 화면: 📋 버튼으로 자세한 정보 서랍 열기, 바깥(보드)을 누르면 닫기
   $('panel-btn').onclick = e => { e.stopPropagation(); document.body.classList.toggle('panel-open'); };
   $('mini-players').onclick = e => { e.stopPropagation(); document.body.classList.toggle('panel-open'); };
