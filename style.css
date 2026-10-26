@@ -29,7 +29,9 @@ html, body {
 
 /* ───────── 3D 무대 ───────── */
 .stage {
-  --w: min(calc(100vh - 150px), calc(100vw - 388px), 780px);
+  /* 컴퓨터 화면: 판을 화면 높이에 맞춰 가로로 넓게 (오른쪽 여백이 크게 남지 않게) */
+  --h: calc(100vh - 130px);
+  --w: min(calc(100vw - 388px), calc(var(--h) * 1.4));
   width: var(--w);
   flex-shrink: 0;
   display: flex;
@@ -44,7 +46,7 @@ html, body {
 .canvas-wrap {
   position: relative;
   width: 100%;
-  height: calc(var(--w) * 0.92);
+  height: min(var(--h), calc(var(--w) * 0.92));
   border-radius: 14px;
   overflow: hidden;
   box-shadow: 0 10px 30px rgba(0, 0, 0, .4);

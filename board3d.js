@@ -833,12 +833,14 @@ const Board3D = (() => {
     if (key === fitKey) return fitDist;
     camera.clearViewOffset();
     let lo = 4, hi = 60;
+    // 컴퓨터 화면은 판 위에 라운드·기금 표시가 떠 있어서 위아래를 조금 비움
+    const yMax = PHONE_LANDSCAPE.matches ? 0.985 : 0.9;
     for (let i = 0; i < 18; i++) {
       const mid = (lo + hi) / 2;
       placeCamera(mid);
       const fits = corners().every(c => {
         const p = c.clone().project(camera);
-        return Math.abs(p.x) < 0.98 && Math.abs(p.y) < 0.985;
+        return Math.abs(p.x) < 0.98 && Math.abs(p.y) < yMax;
       });
       if (fits) hi = mid; else lo = mid;
     }
@@ -849,7 +851,8 @@ const Board3D = (() => {
     placeCamera(hi);
     const xs = corners().map(c => c.clone().project(camera).x);
     const w = canvas.clientWidth;
-    if (camera.aspect > 1.2) fitShift = Math.max(0, (Math.min(...xs) + 0.98) / 2 * w);
+    // (휴대폰 가로 화면에서만. 컴퓨터에서는 판을 가운데에)
+    if (camera.aspect > 1.2 && PHONE_LANDSCAPE.matches) fitShift = Math.max(0, (Math.min(...xs) + 0.98) / 2 * w);
     // 판 오른쪽 끝의 화면 위치(px)를 CSS로 알려줌 → 자세히 보기 창을 판 옆 빈 공간에 맞춰 염
     const right = Math.round((Math.max(...xs) + 1) / 2 * w - fitShift);
     document.documentElement.style.setProperty('--board-right', `${right}px`);
@@ -862,21 +865,22 @@ const Board3D = (() => {
     // lift만큼 위를 비우려면 판을 h/(h-lift)배 멀리서 보고, 아래쪽·왼쪽 끝은 제자리에 둠
     const f = lift > 0.5 ? h / (h - lift) : 1;
     placeCamera(dist * cam.zoom * f);
-    if (f > 1) camera.setViewOffset(w, h, w / 2 - (w / 2 - fitShift) / f, -(h / 2) * (1 - 1 / f), w, h);
+    if (f > 1) camera.setViewOffset(w, h, fitShift > 0 ? w / 2 - (w / 2 - fitShift) / f : 0, -(h / 2) * (1 - 1 / f), w, h);
     else if (fitShift > 0 && cam.zoom >= 1) camera.setViewOffset(w, h, fitShift, 0, w, h);
     else camera.clearViewOffset();
   }
 
   // 가로 화면 카메라 기울기: 거의 위에서 내려다봐서 먼 쪽(위쪽) 도시도 가까운 쪽만큼 잘 보이게
   const LANDSCAPE_EL = 1.33;
+  const PHONE_LANDSCAPE = matchMedia('(orientation: landscape) and (max-height: 600px)');
   function resize() {
     const w = canvas.clientWidth, h = canvas.clientHeight;
     if (!w || !h) return;
     renderer.setSize(w, h, false);
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
-    // 가로로 넓은 화면에서는 조금 더 위에서 내려다봐서 판이 화면 높이를 꽉 채우게
-    cam.el = camera.aspect > 1.2 ? LANDSCAPE_EL : 0.98;
+    // 가로로 넓은 화면(휴대폰 가로·컴퓨터)에서는 거의 위에서 내려다봐서 위쪽 도시도 잘 보이게
+    cam.el = camera.aspect > 1.05 ? LANDSCAPE_EL : 0.98;
   }
 
   // 판은 고정 (돌리기·확대 없음). 입력은 칸 누르기와 쓸어서 주사위 던지기만
